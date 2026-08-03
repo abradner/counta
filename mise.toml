@@ -1,7 +1,7 @@
 # Toolchain pins — run `mise install` before working in this repo.
 
 [tools]
-ruby = "3.4"
+ruby = "4.0"
 
 # [env]
 # Per-project env vars and port offsets go here if several projects run
