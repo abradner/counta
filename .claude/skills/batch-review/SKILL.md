@@ -25,22 +25,15 @@ when green) remains correct for one PR at a time; this skill exists for the mult
 
 ## Repo specifics
 
-[KEEL:FILL — everything in this section is per-repo. Required before first use:
-
-- **Validation commands**: the exact pre-push gate (lint, build, full test suite) with any
-  version-manager prefix a dev machine needs.
-- **Bot roster**: which reviewers run, on what trigger, at what cost. Example shape from sibling
-  repos: Copilot auto-reviews on the ready-for-review edge only (never on push) and is cheap;
-  Codex reviews only on explicit `@codex review` and gets a budget of 2–3 invocations per batch,
-  reserved for aggregate diffs (evidence: in one measured batch, Copilot caught 6/6 instances of a
-  mechanical bug class; every Codex finding that mattered was cross-file).
-- **Merge strategy**: squash / merge-commit / rebase. Several rules below are strategy-dependent
-  and are marked `[SQUASH]` / `[MERGE-COMMIT]` — keep the matching variant, delete the other.
-  Porting these rules across strategies unexamined has produced subtly wrong instructions that
-  only surfaced under real conflict pressure, three separate times in one sibling repo.
-- **Deferral convention**: where non-blocking findings go (the external tracker named in
-  AGENTS.md, with whatever triage metadata it requires). Never a PR-body table — it goes stale
-  between rounds and vanishes on merge.]
+- **Validation commands**: `bundle exec rspec` for the full suite, prefixed with mise's Ruby
+  (`mise exec --`) if not already active in the shell. No app code or CI exists yet (greenfield) —
+  revisit this line once the Rails app is scaffolded and a linter (if any) is adopted.
+- **Bot roster**: Copilot auto-reviews every PR — cheap, unrationed. Codex/Claude review by
+  request only — expected to actually be invoked whenever a non-trivial PR won't otherwise get
+  substantial human review before merge.
+- **Merge strategy**: squash-merge. Rules below keep their `[SQUASH]` variant; `[MERGE-COMMIT]`
+  variants have been removed.
+- **Deferral convention**: GitHub Issues. File non-blocking findings there, not in a PR-body table.
 
 ## Phase 1 — Flavour probe
 
@@ -82,12 +75,10 @@ Interstitial CI red is tolerated (the followup fixes it). Exactly one showstoppe
 touching an interstitial mid-bake: **an irreversible action on merge** — a destructive migration,
 an unrecallable external side effect. Everything else waits.
 
-- If main moves under the stack: `[MERGE-COMMIT]` merge main up through the stack by hand, never
-  rebase a reviewed branch. `[SQUASH]` restart affected branches from fresh main after their
-  parents land; never stack new commits on pre-merge history.
-- A showstopper fix injected low in the stack: `[MERGE-COMMIT]` propagates upward through the
-  child merges. `[SQUASH]` must be explicitly propagated into each child — squash does not
-  preserve the ancestry that would reunify it.
+- If main moves under the stack: restart affected branches from fresh main after their parents
+  land; never stack new commits on pre-merge history.
+- A showstopper fix injected low in the stack must be explicitly propagated into each child —
+  squash does not preserve the ancestry that would reunify it.
 
 **Driving phase transitions**: subscribe to PR/CI events and react when they arrive; pair the
 subscription with a bounded fallback timer (order of ~30 min for a full stack's reviews, ~10 min
@@ -131,16 +122,9 @@ polling elsewhere.
 - Merge bottom-up. Before deleting a merged branch, verify every child PR has already been
   retargeted — deleting a base branch races the platform's auto-retarget and has closed child PRs
   mid-train. Retarget first, confirm, then delete.
-- Followup merges last: `[SQUASH]` squash-merged. `[MERGE-COMMIT]` per repo convention.
+- Followup merges last: squash-merged.
 - If a child PR does get closed by a race: reopen against the corrected base immediately; its
   commits are intact on the branch.
-
-## Phase 8 — Release, if applicable
-
-[KEEL:FILL — delete if the repo has no artifact/tag flow.] A merge is not a release: if artifacts
-build from tags, cut one tag for the whole train once main is green on the merged tip — one tag
-per train, not per PR, and only when the delta can change the built artifact (docs-only trains get
-no tag).
 
 ## Rules of thumb
 
@@ -169,4 +153,4 @@ evidence, not in any single batch.
 - The retarget-before-delete rule exists because `gh pr merge --delete-branch` closed a child PR
   in a live merge train when branch deletion raced GitHub's auto-retarget.
 
-[KEEL:FILL — append this repo's own batch outcomes here as they accumulate.]
+(Append this repo's own batch outcomes here as they accumulate.)

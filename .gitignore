@@ -19,22 +19,9 @@ tmp/
 # .idea/
 # .vscode/
 
-# --- [KEEL:FILL — uncomment the block(s) for this repo's stack, delete the rest] ---
-
-# Ruby/Rails
-# /log/*
-# /storage/*
-# /public/assets
-# .bundle/
-# vendor/bundle
-
-# Go
-# /bin/
-# *.test
-# coverage.out
-
-# Node/TypeScript (bun, npm, pnpm)
-# node_modules/
-# dist/
-# coverage/
-# *.tsbuildinfo
+# --- Ruby/Rails ---
+/log/*
+/storage/*
+/public/assets
+.bundle/
+vendor/bundle

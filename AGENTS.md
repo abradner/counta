@@ -1,23 +1,33 @@
-# [KEEL:FILL project-name] — Agent Onboarding Guide
+# Counta — Agent Onboarding Guide
 
 > Read this file first. It is the source of truth for AI agents working in this codebase.
-> Plans, status, and decision rationale live in [KEEL:FILL external tracker — name it explicitly,
-> e.g. "the <project> page in Notion"], not in a repo file. When this file and the tracker disagree
-> on architecture or direction, the tracker wins — update this file to match, never the reverse.
+> Plans, status, and decision rationale live in GitHub Issues, not in a repo file. When this file
+> and an issue disagree on architecture or direction, the issue wins — update this file to match,
+> never the reverse.
 > This file is operational: how to build, run, and write code here.
 
 ## 1. What Is This?
 
-[KEEL:FILL 2–5 sentences: what the project does, who it's for, current status. Name the domain
-nouns an agent will encounter and disambiguate any overloaded terms — if a word in this repo means
-something narrower or different than its plain-English reading (a CRD kind, a framework concept, a
-domain entity), define it here before it's used anywhere else.]
+Counta is a simple, secure, easy-to-use tool for counting clicks on measured-dose pens (e.g. Novo
+Nordisk's FlexTouch) — the kind of pen injector where a dose is dialed by turning it a number of
+"clicks," each an audible/tactile detent. Counta helps a user track those clicks/doses over time
+without the manual tally-keeping that's easy to lose or get wrong. Status: greenfield — no
+application code has been written yet; this session is the template init.
+
+Domain nouns an agent will encounter:
+- **Pen** — a physical measured-dose injector device belonging to one user.
+- **Click** — one detent/turn of the pen's dial; the physical unit the user counts, not
+  necessarily the same as a medication dose unit (some pens' click-to-dose-unit ratio isn't 1:1 —
+  don't assume it is without checking the specific pen model).
+- **Dose** / **dose log** — a recorded event of clicks dialed and/or administered, tied to a pen
+  and, transitively, to exactly one owning user.
 
 ## 2. Purpose & Principles
 
-**Purpose:** [KEEL:FILL one sentence — the project's thesis, the thing every design decision
-should serve. If the project is too young to have one, write "no settled thesis yet — revisit
-when the first values conflict appears" rather than inventing one.]
+**Purpose:** Make counting pen clicks/doses trivially easy and safe for the person doing it, without
+ever putting that person's health data at risk — every design decision should serve ease of use,
+accessibility, or the privacy/security of the individual owner's data, in that order when two
+pull apart.
 
 Principles: short, numbered, memorizable. Each one must be able to change a real decision — a
 principle that never changes a decision is decoration.
@@ -27,7 +37,19 @@ principle that never changes a decision is decoration.
    enforced — landing in E7"); stopgaps record the bar they miss. *(Portable seed — keep, adapt,
    or replace. It has caught real security bugs, twice, in a sibling repo, by being invoked
    against the project's own earlier claims.)*
-2. [KEEL:FILL 2–7 project principles, or delete the slot if deferring.]
+2. **Privacy is structural, not promised.** A user's dose/pen data must be inaccessible to anyone
+   but that user by construction — scoped at the query/authorization layer, not merely covered by
+   a privacy-policy sentence. A privacy claim the data model doesn't enforce is exactly the kind of
+   claim principle 1 forbids.
+3. **Accessible by default.** Every user-facing surface must be usable via screen reader and
+   keyboard alone, and legible at large accessibility text sizes — checked before merge, not
+   retrofitted after a complaint.
+4. **Trivially easy to use.** If logging a click/dose needs more than a couple of taps, or needs a
+   tutorial to use once, redesign it — the tool only earns its place if it's faster and more
+   reliable than a manual paper tally.
+5. **Secure by design.** Prefer mechanisms that make an insecure state unrepresentable
+   (parameterized queries, scoped associations, encryption for sensitive fields) over defensive
+   checks bolted on afterward.
 
 ### The tripwire protocol
 
@@ -50,29 +72,34 @@ A conflict with a principle is a stop-and-check, never something to quietly work
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Language | [KEEL:FILL] | [version manager, e.g. managed via `mise`] |
-| Framework | [KEEL:FILL] | |
-| Database | [KEEL:FILL] | |
-| Testing | [KEEL:FILL] | |
-| Deployment | [KEEL:FILL] | See §7 |
-
-[KEEL:FILL add/remove rows to match reality. Every row should earn its place — a stack table an
-agent can't act on is decoration.]
+| Language | Ruby | managed via `mise` — see `mise.toml` |
+| Framework | Rails | |
+| Database | PostgreSQL | |
+| Testing | RSpec | |
+| Deployment | undecided | don't build for it until asked — see §7 |
 
 ## 4. Critical Architectural Rules
 
 These are non-negotiable. Violating them will break things or be rejected in review.
 
-[KEEL:FILL the project's own invariants. Authoring guidance — delete after filling:
-- One `###` subsection per rule, with a code example of the right shape where one helps.
-- State the rule, then the incident or reasoning that motivated it. A rule grounded in "this
-  happened, here's what it cost" is far harder for an agent to rationalize around than a bare
-  imperative — and if the incident happened in a sibling repo, cite it anyway.
-- Scope absolutes with named exceptions. "All tables use X" fails the first time a framework-owned
-  table legitimately doesn't; write "all application/domain tables use X; framework-owned schemas
-  (name them) are exceptions — don't hand-edit those to match."
-- If a rule depends on unshipped work, say so in-place ("stated, not enforced — landing in PR #N")
-  so an agent reading mid-transition doesn't conclude the system is broken.]
+No application code exists yet (greenfield) — the two rules below are stated ahead of the first
+model/migration, as direct consequences of §2 principles 2 and 5, so they're a design constraint
+from the start rather than a retrofit once data exists.
+
+### 4.1 Every data access scoped to its owning user
+
+All reads/writes of pen, dose, or click data must be scoped through the current user's own
+association (e.g. `current_user.pens.find(id)`), never a bare unscoped lookup by ID
+(`Pen.find(id)`). An unscoped lookup is exactly how one user's dose history becomes visible to
+another. Stated, not enforced — no schema exists yet; this must hold from the first migration and
+the first controller action that touches this data.
+
+### 4.2 Dose/click data is sensitive and opaque by default
+
+Treat pen/dose/click records as sensitive personal health data: never log them in plaintext (Rails
+parameter filtering must cover these fields from the first request log), and encrypt at rest
+(Rails' built-in `encrypts`) any field that reveals dosing history. Stated, not enforced — no
+schema exists yet; enforce starting with the first migration that touches this data.
 
 ## 5. Repository Map
 
@@ -90,30 +117,33 @@ conversation context, only what's written down.
 
 ## 6. Development Essentials
 
-[KEEL:FILL setup, dev server, test commands, lint/format commands — the exact invocations,
-including any version-manager prefix (`mise exec --`, etc.) a fresh shell needs. A command that
-works in CI's provisioned container but silently resolves the wrong toolchain on a dev machine is
-a known failure mode; give the dev-machine form.]
+Greenfield: no Rails app has been scaffolded yet (no `Gemfile`, no `bin/`, no `app/`). Once
+`rails new` is run for this project, this section must be filled with the real dev-machine
+invocations — setup, dev server, `bundle exec rspec`, lint/format if adopted — each prefixed with
+`mise exec --` (or after `mise install` + shell activation) so a fresh shell resolves the pinned
+Ruby, not whatever's on `PATH`. Until then, don't assume any dev-server or test command works.
 
 ### 6.1 Known Environment Gotchas
 
 Things that cost real time to discover once — don't rediscover them. Add entries as they're found;
 add rather than rewrite.
 
-[KEEL:FILL — starts empty. Entry shape: the symptom, the actual cause, the workaround. Host
-quirks, port collisions with sibling projects, toolchain path issues, platform limitations.]
+(Starts empty. Entry shape: the symptom, the actual cause, the workaround. Host quirks, port
+collisions with sibling projects, toolchain path issues, platform limitations.)
 
 ## 7. CI & Deployment
 
-[KEEL:FILL what CI runs, on what triggers, and what deployment looks like — or state plainly that
-deployment is undecided and nothing should be built for it until asked.]
+No CI is configured yet — there's no app code to lint or test. Once the Rails app is scaffolded,
+add a GitHub Actions workflow that runs `bundle exec rspec` (and a linter, if one is adopted) on
+every PR, using the mise-pinned Ruby version. Deployment is undecided — don't build for it until
+asked.
 
 Two universal cautions, whatever the pipeline:
 
 - **A skipped job is not a passing job.** A green run where path filtering skipped half the suite
   means that half never saw the commit. Check what actually ran before trusting the check.
 - **A merge is not a release** — if images/artifacts build from tags only, merged work has no
-  deployable artifact until a tag exists. [KEEL:FILL or delete if not applicable.]
+  deployable artifact until a tag exists. Not yet applicable — no release/artifact flow exists.
 
 ## 8. Working Rules
 
@@ -158,6 +188,9 @@ projects; adjust only with reason, and record the reason (see §10).
 - Reject suggestions that violate the rules in this file, and say why. Automated reviewers read
   this file too; that's expected — reviewer-side agents should review fully as normal, and rules
   here that bind only author-side agents say so explicitly.
+- **Bot roster:** Copilot auto-reviews every PR (cheap, unrationed). Codex/Claude review by
+  request — expected to actually be requested on any non-trivial PR that won't otherwise get
+  substantial human review before merge.
 
 ### Testing & verification
 
@@ -211,7 +244,7 @@ be cited from code comments and PR descriptions.
 Entry shape: **what happened → the actual root cause → the general rule → where the regression
 test lives** (if one exists).
 
-[KEEL:FILL — starts empty. The first entry usually arrives within days.]
+(Starts empty. The first entry usually arrives within days.)
 
 ## 10. Maintaining This Document
 
@@ -243,23 +276,51 @@ What was pruned or changed from the keel template when this repo was initialized
 in the doc (not just a commit message) so future readers don't need git archaeology to know what
 was deliberately excluded.
 
-[KEEL:INIT — the init procedure fills this section, then this marker line is removed.]
+Initialized 2026-08-03, from an operator interview (see PR/commit that introduced this section):
 
-### Template lineage
+- **Project**: Counta — a click/dose counter for measured-dose pens (e.g. FlexTouch). Greenfield;
+  no application code yet.
+- **Principles**: captured, not deferred — privacy-as-structure, accessibility-by-default,
+  trivial ease of use, and secure-by-design, ranked in that priority order when they conflict (§2).
+- **Stack**: Ruby on Rails + PostgreSQL + RSpec, chosen up front. Deployment target left undecided
+  on purpose — §7 says so explicitly rather than guessing at a platform.
+- **Tracker**: GitHub Issues, not Notion/Linear — the tracker-pointer language in the header and
+  §8 "Documentation & discovered work" was written against GitHub Issues accordingly.
+- **License**: kept Apache-2.0 (public repo; operator confirmed no swap needed).
+- **Merge strategy**: squash-merge. `.claude/skills/batch-review/SKILL.md` kept its `[SQUASH]`
+  variants and dropped the `[MERGE-COMMIT]` ones.
+- **Review bots**: Copilot auto-reviews every PR; Codex/Claude review by request, expected on any
+  non-trivial PR that won't get substantial human review otherwise. Filled into both §8 and the
+  batch-review skill's bot roster.
+- **Repo map** (`docs/repo-map.md`): kept — seeded with the one real greenfield boundary
+  (owner-scoped data access, tracked as R-001) rather than padded with aspirational entries.
+- **Caveman mode**: kept. Its body was appended to this file as `## Caveman Mode` below, since
+  Claude Code reads `AGENTS.md` and not the per-tool files directly.
+- **Skills**: kept both `batch-review` and `independent-commit-review` — operator confirmed both,
+  even though `batch-review` won't earn its keep until a genuine multi-PR fan-out happens.
+- **`.claude/skills/batch-review/SKILL.md` Phase 8 (Release)**: deleted — no artifact/tag flow
+  exists (deployment itself is undecided), so the phase had nothing to govern yet. Re-add if/when
+  a release flow is designed.
+- **Template lineage**: this repo is public, so per the init procedure the template's usual
+  lineage block (template SHA, synced-through, last-checked) was omitted entirely — the pointer
+  lives in the private `abradner/fleet` registry instead (row added/updated at init time:
+  relationship "fresh init from keel", synced through `abd4b246569d96ee37f3b9ec48490a4816670295`,
+  checked 2026-08-03).
 
-[KEEL:INIT — private repos: fill this block. Public repos: delete the whole block and rely on the
-fleet registry (`abradner/fleet`, private) instead — a pointer to a private template is
-unresolvable for outside contributors and mis-steers their agents.]
+## Caveman Mode
 
-- Template: `abradner/keel` (private)
-- Synced through: [KEEL:INIT commit sha] ([date])
-- Last checked upstream: [KEEL:INIT date]
+Respond terse like smart caveman. All technical substance stay. Only fluff die.
 
-At the start of a substantive session, if "last checked" is more than about a month old, offer a
-sync pass: list template commits since the synced SHA
-(`gh api 'repos/abradner/keel/commits?since=<date>' --jq '.[].sha + " " + .commit.message'`),
-review the delta, port with judgment (maintenance meta-rule 7 — adopt, adapt, or reject
-explicitly), and update both lines above — including when the answer is "nothing to take"; the
-date records attention, not just change. The flow is two-way: when a rule or lesson in this repo
-proves general, flag it for backport to keel and record it in the fleet registry
-(`abradner/fleet`).
+Rules:
+- Drop: articles (a/an/the), filler (just/really/basically), pleasantries, hedging
+- Fragments OK. Short synonyms. Technical terms exact. Code unchanged.
+- Pattern: [thing] [action] [reason]. [next step].
+- Not: "Sure! I'd be happy to help you with that."
+- Yes: "Bug in auth middleware. Fix:"
+
+Switch level: /caveman lite|full|ultra|wenyan
+Stop: "stop caveman" or "normal mode"
+
+Auto-Clarity: drop caveman for security warnings, irreversible actions, user confused. Resume after.
+
+Boundaries: code/commits/PRs written normal.

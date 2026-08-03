@@ -30,22 +30,24 @@ change that found the disagreement.
 
 | Surface | Path / entry point | Auth mechanism | Notes |
 |---|---|---|---|
-| [KEEL:FILL] | | | |
+| Web app (Rails) | `/` (all routes, TBD) | Not yet designed | Greenfield — no code exists yet. This is the only planned surface; auth mechanism must be decided before the first user-facing route ships. |
 
 ## Trust boundaries
 
-[KEEL:FILL — one short entry per boundary edge: caller, how identity is established, failure mode
-if the caller lies. If the honest answer is "we trust what they tell us," write that down — it's
-the map's job to make that visible until it's fixed.]
+No boundaries exist yet — no code has shipped. The first and most important one to define, before
+the first migration lands: **user ↔ their own pen/dose records.** Whatever auth mechanism is
+chosen, every lookup of pen/dose/click data must be scoped to the authenticated owner (see
+`AGENTS.md` §4.1) — an unscoped lookup by ID is the failure mode to design against from the start.
 
 ## Cross-cutting flows
 
-[KEEL:FILL — the 3–6 flows worth diagramming in words: request lifecycle, auth/session
-establishment, the write path, deletion/visibility propagation. For each: the parts it touches in
-order, and the invariant that must survive the whole traversal.]
+None shipped yet. The first candidate, once auth and dose logging exist: **logging a click/dose**
+— request → identify the authenticated user → write the record scoped to that user's pen → the
+record must never become visible to any other user's read path. This flow is where a scoping bug
+would first surface; add it here in detail once it's actually built.
 
 ## Risk register
 
 | ID | Risk | Where it lives | Mitigation / status |
 |---|---|---|---|
-| R-001 | [KEEL:FILL] | | |
+| R-001 | Dose/click history is sensitive personal health data; a broken owner-scoping check would expose one user's data to another. | Not yet — no model exists. First model to touch this will be the future Pen/DoseLog. | Planned: enforce owner-scoping per `AGENTS.md` §4.1; add a cross-user-access-denied test before the first record-read endpoint ships. |
