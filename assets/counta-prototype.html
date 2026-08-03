@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>counta.click — prototype</title>
+<style>
+  :root{
+    --ink:#1f2733; --ink-soft:#5a616c; --line:#dfe3e9; --bg:#f5f6f8; --card:#ffffff;
+    --brand:#1b3a6b; --brand-ink:#ffffff;
+    --amber-bg:#fff7e6; --amber-ink:#7a5200; --amber-line:#f0c36d;
+    --red-bg:#fdeeee; --red-ink:#8f1f1f; --red-line:#e9a0a0;
+    --ok-bg:#eef7f1; --ok-ink:#1e5c3a;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',Helvetica,sans-serif;background:var(--bg);color:var(--ink);
+       font-size:16px;line-height:1.4;-webkit-text-size-adjust:100%}
+  .app{max-width:760px;margin:0 auto;padding:12px 14px 40px}
+  header.top{display:flex;align-items:center;gap:10px;padding:6px 2px 12px}
+  .logo{font-weight:800;font-size:20px;color:var(--brand);letter-spacing:-0.02em}
+  .logo span{color:#e65300}
+  .pen-chip{margin-left:auto;font-size:13px;font-weight:600;background:var(--card);border:1px solid var(--line);
+            border-radius:999px;padding:6px 12px;color:var(--ink-soft)}
+  main{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
+  @media (min-width:560px){ main{grid-template-columns:200px 1fr;gap:22px} }
+  .pen-col{position:sticky;top:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .pen-col svg{width:100%;max-width:170px;height:auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
+  .pen-caption{font-size:12px;color:var(--ink-soft);text-align:center;min-height:2.4em}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+  .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin:12px 0 4px}
+  label:first-of-type{margin-top:0}
+  input[type=text],input[type=number],input[type=date],input[type=month],select{
+    width:100%;padding:10px;font-size:16px;border:1px solid #c9ced6;border-radius:8px;background:#fff;color:var(--ink)}
+  input:focus-visible,select:focus-visible,button:focus-visible{outline:3px solid #7fb3ff;outline-offset:1px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row>div{min-width:0}
+  @media (max-width:420px){ .row{grid-template-columns:1fr} }
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:4px}
+  button{font:inherit;cursor:pointer}
+  .btn{width:100%;min-height:48px;border:0;border-radius:10px;font-size:16px;font-weight:700;
+       background:var(--brand);color:var(--brand-ink);padding:12px}
+  .btn.secondary{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}
+  .btn.danger{background:#fff;color:var(--red-ink);border:1.5px solid var(--red-line)}
+  .btn+.btn{margin-top:10px}
+  .iconbtn{border:1px solid var(--line);background:#fff;border-radius:999px;width:28px;height:28px;font-weight:700;
+           color:var(--brand);flex:none}
+  /* segmented unit toggle */
+  .seg{display:flex;border:1.5px solid var(--brand);border-radius:10px;overflow:hidden}
+  .seg button{flex:1;min-height:44px;border:0;background:#fff;color:var(--brand);font-weight:700}
+  .seg button[aria-pressed=true]{background:var(--brand);color:#fff}
+  /* dose chips */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .chips button{min-height:44px;flex:1 1 40%;padding:8px 10px;border-radius:10px;border:1.5px solid var(--line);
+                background:#fff;font-weight:700;font-size:15px;white-space:nowrap}
+  .chips button[aria-pressed=true]{border-color:var(--brand);background:#eaf1fb;color:var(--brand)}
+  /* stepper */
+  .doserow{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;margin-top:10px}
+  .doserow input{text-align:center;font-size:20px;font-weight:800}
+  .doserow .step{min-height:48px;border-radius:10px;border:1.5px solid var(--line);background:#fff;font-size:22px;font-weight:800}
+  .readout{margin-top:12px;padding:12px;border-radius:10px;background:#eaf1fb;color:var(--brand);text-align:center}
+  .readout .big{font-size:30px;font-weight:800;letter-spacing:-.01em}
+  .readout .sub{font-size:14px;font-weight:600}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+  .stat{background:#f2f4f7;border-radius:10px;padding:10px 8px;text-align:center}
+  .stat .v{font-size:17px;font-weight:800}
+  .stat .k{font-size:11px;color:var(--ink-soft);font-weight:600}
+  .warn{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:14px;font-weight:600;
+        display:flex;gap:8px;align-items:flex-start}
+  .warn.amber{background:var(--amber-bg);color:var(--amber-ink);border:1px solid var(--amber-line)}
+  .warn.red{background:var(--red-bg);color:var(--red-ink);border:1px solid var(--red-line)}
+  .history{list-style:none;margin:8px 0 0;padding:0;font-size:14px}
+  .history li{display:flex;justify-content:space-between;gap:8px;padding:8px 2px;border-top:1px solid var(--line);white-space:nowrap}
+  .history .mgv{color:var(--ink-soft)}
+  dialog{border:0;border-radius:14px;padding:20px;max-width:340px;width:calc(100vw - 48px);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+  dialog::backdrop{background:rgba(15,23,42,.45)}
+  dialog h3{margin:0 0 8px;font-size:17px}
+  dialog p{margin:0 0 14px;font-size:15px}
+  .confirm-big{font-size:34px;font-weight:800;color:var(--brand);text-align:center;margin:6px 0 2px}
+  .confirm-sub{text-align:center;color:var(--ink-soft);font-weight:600;margin-bottom:14px}
+  .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  footer{margin-top:6px;font-size:12px;color:var(--ink-soft);text-align:center}
+  /* ---- pen svg dynamic bits ---- */
+  #piston-assembly{transition:transform .7s cubic-bezier(.3,.7,.3,1)}
+  #label-front,#label-back{transform-box:fill-box;transform-origin:50% 50%;transition:transform .3s ease,opacity .3s ease}
+  #label-back{transform:scaleX(.02);opacity:0}
+  .show-back #label-front{transform:scaleX(.02);opacity:0}
+  .show-back #label-back{transform:scaleX(1);opacity:1;transition-delay:.28s}
+  #selector-ribs,#insulin-scale{transform-box:fill-box;transform-origin:50% 50%;transition:transform .55s ease}
+  .show-back #selector-ribs{transform:translateX(4px)}
+  .show-back #insulin-scale{transform:translateX(6px);opacity:.5}
+  @media (prefers-reduced-motion:reduce){
+    #piston-assembly,#label-front,#label-back,#selector-ribs,#insulin-scale{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="logo">counta<span>.click</span></div>
+    <div class="pen-chip" id="chip">No pen yet</div>
+  </header>
+
+  <main>
+    <!-- ========================= PEN ========================= -->
+    <div class="pen-col" aria-hidden="false">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 660" class="counta-pen" id="pen-svg" role="img" aria-labelledby="pen-title"
+           style="--c-body:#F2F1EE; --c-body-dark:#D9D8D4; --c-accent:#7FD1C8; --c-label:#FFFFFF; --c-text:#123B6D; --c-liquid:#F2FAF9; --c-button:#C9C8C4; --c-button-detail:#8F8E8A; --c-neck:#E8E4DD; --c-scale:#26324B; --c-piston:#8E959F; --c-rod:#5A616C;">
+        <title id="pen-title">Your pen, live view</title>
+        <defs>
+          <linearGradient id="cyl-shade" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".18" stop-color="#fff" stop-opacity=".15"/>
+            <stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset=".72" stop-color="#000" stop-opacity=".08"/>
+            <stop offset="1" stop-color="#000" stop-opacity=".25"/>
+          </linearGradient>
+          <linearGradient id="glass-shade" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#fff" stop-opacity=".65"/><stop offset=".2" stop-color="#fff" stop-opacity=".1"/>
+            <stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".12"/>
+          </linearGradient>
+          <clipPath id="cartridge-clip"><rect x="82" y="384" width="56" height="178" rx="6"/></clipPath>
+        </defs>
+        <g id="pen">
+          <g id="dose-button">
+            <rect id="button-face" x="80" y="22" width="60" height="54" rx="14" fill="var(--c-button)" stroke="rgba(0,0,0,.25)"/>
+            <g id="button-lines" fill="var(--c-button-detail)">
+              <rect x="102" y="32" width="5" height="34" rx="2.5"/><rect x="113" y="32" width="5" height="34" rx="2.5"/>
+            </g>
+            <rect id="button-stem" x="86" y="74" width="48" height="18" fill="var(--c-body-dark)" stroke="rgba(0,0,0,.2)"/>
+          </g>
+          <g id="dose-selector">
+            <rect x="70" y="92" width="80" height="56" rx="8" fill="var(--c-body-dark)" stroke="rgba(0,0,0,.25)"/>
+            <g id="selector-ribs" stroke="rgba(0,0,0,.22)" stroke-width="2">
+              <line x1="80" y1="98" x2="80" y2="142"/><line x1="90" y1="98" x2="90" y2="142"/>
+              <line x1="100" y1="98" x2="100" y2="142"/><line x1="110" y1="98" x2="110" y2="142"/>
+              <line x1="120" y1="98" x2="120" y2="142"/><line x1="130" y1="98" x2="130" y2="142"/>
+              <line x1="140" y1="98" x2="140" y2="142"/>
+            </g>
+          </g>
+          <rect id="body-shell" x="74" y="148" width="72" height="230" fill="var(--c-body)" stroke="rgba(0,0,0,.2)"/>
+          <g id="dose-counter">
+            <rect id="dose-pointer" x="107.5" y="154" width="5" height="16" rx="2.5" fill="#fff" stroke="rgba(0,0,0,.3)"/>
+            <rect id="counter-window" x="88" y="176" width="44" height="32" rx="4" fill="#fff" stroke="rgba(0,0,0,.35)" stroke-width="1.5"/>
+            <text id="dose-value" x="110" y="199" text-anchor="middle" font-family="system-ui,sans-serif" font-size="19" font-weight="700" fill="#1F2733">0</text>
+          </g>
+          <g id="label">
+            <rect id="label-bg" x="79" y="228" width="62" height="142" rx="6" fill="var(--c-label)" stroke="rgba(0,0,0,.12)"/>
+            <path id="label-stripe-top" d="M 79 234 Q 79 228 85 228 L 135 228 Q 141 228 141 234 L 141 239 L 79 239 Z" fill="var(--c-accent)"/>
+            <path id="label-stripe-bottom" d="M 79 362 L 141 362 L 141 364 Q 141 370 135 370 L 85 370 Q 79 370 79 364 Z" fill="var(--c-accent)"/>
+            <g id="label-front">
+              <text id="product-name" transform="translate(97, 248) rotate(90)" font-family="system-ui,sans-serif"
+                    font-size="24" font-weight="700" font-style="italic" fill="var(--c-text)">Wegovy</text>
+              <text id="product-strength" transform="translate(126, 248) rotate(90)" font-family="system-ui,sans-serif"
+                    font-size="11" font-weight="500" fill="#5A616C">2.4 mg</text>
+            </g>
+            <g id="label-back">
+              <text id="label-batch" transform="translate(102, 248) rotate(90)" font-family="ui-monospace,monospace"
+                    font-size="13" font-weight="700" fill="#3a4150">LOT —</text>
+              <text id="label-expiry" transform="translate(124, 248) rotate(90)" font-family="ui-monospace,monospace"
+                    font-size="13" font-weight="700" fill="#3a4150">EXP —</text>
+            </g>
+          </g>
+          <g id="cartridge-holder">
+            <rect id="holder-shell" x="74" y="378" width="72" height="184" rx="4" fill="#EDF1F5" stroke="#C2CCD6" stroke-width="1.5"/>
+            <rect id="cartridge-glass" x="82" y="384" width="56" height="178" rx="6" fill="#FBFDFF" stroke="#C2CCD6"/>
+            <g clip-path="url(#cartridge-clip)">
+              <g id="piston-assembly">
+                <rect id="liquid" x="82" y="402" width="56" height="300" fill="var(--c-liquid)"/>
+                <rect id="piston" x="82" y="384" width="56" height="18" rx="4" fill="var(--c-piston)" stroke="rgba(0,0,0,.28)"/>
+                <rect x="86" y="387" width="10" height="12" rx="3" fill="#fff" opacity=".3"/>
+                <rect id="piston-rod" x="103" y="84" width="14" height="300" fill="var(--c-rod)"/>
+                <rect x="105.5" y="84" width="3" height="300" fill="#fff" opacity=".25"/>
+              </g>
+            </g>
+            <g id="insulin-scale" stroke="var(--c-scale)" stroke-width="2" stroke-linecap="round">
+              <line x1="76" y1="394" x2="84" y2="394"/><line x1="76" y1="416" x2="90" y2="416"/>
+              <line x1="76" y1="438" x2="84" y2="438"/><line x1="76" y1="460" x2="90" y2="460"/>
+              <line x1="76" y1="482" x2="84" y2="482"/><line x1="76" y1="504" x2="90" y2="504"/>
+              <line x1="76" y1="526" x2="84" y2="526"/><line x1="76" y1="548" x2="90" y2="548"/>
+            </g>
+            <rect x="82" y="384" width="56" height="178" rx="6" fill="url(#glass-shade)" pointer-events="none"/>
+          </g>
+          <g id="needle-mount">
+            <path id="shoulder" d="M 74 562 L 146 562 L 146 568 Q 146 574 139 575 L 125 577 L 95 577 L 81 575 Q 74 574 74 568 Z"
+                  fill="var(--c-neck)" stroke="rgba(0,0,0,.18)"/>
+            <rect id="neck" x="95" y="576" width="30" height="26" rx="3" fill="var(--c-neck)" stroke="rgba(0,0,0,.18)"/>
+            <g id="neck-threads" stroke="rgba(0,0,0,.22)" stroke-width="1.5">
+              <line x1="97" y1="582" x2="123" y2="584"/><line x1="97" y1="588" x2="123" y2="590"/><line x1="97" y1="594" x2="123" y2="596"/>
+            </g>
+            <rect id="septum" x="99" y="602" width="22" height="16" rx="5" fill="#9AA1AB" stroke="rgba(0,0,0,.25)"/>
+            <rect x="103" y="605" width="6" height="10" rx="3" fill="#fff" opacity=".35"/>
+            <rect x="95" y="576" width="30" height="42" rx="3" fill="url(#cyl-shade)" pointer-events="none"/>
+          </g>
+          <g id="shading" pointer-events="none">
+            <rect x="80" y="22" width="60" height="70" rx="14" fill="url(#cyl-shade)"/>
+            <rect x="70" y="92" width="80" height="56" rx="8" fill="url(#cyl-shade)"/>
+            <rect x="74" y="148" width="72" height="230" fill="url(#cyl-shade)"/>
+            <rect x="74" y="378" width="72" height="184" rx="4" fill="url(#cyl-shade)" opacity=".55"/>
+          </g>
+        </g>
+      </svg>
+      <div class="pen-caption" id="pen-caption">Front of pen</div>
+    </div>
+
+    <!-- ========================= PANELS ========================= -->
+    <div class="panel-col">
+
+      <!-- SETUP MODE -->
+      <section class="card" id="setup-card">
+        <h2>Set up this pen
+          <button class="iconbtn" id="info-btn" aria-label="Why we ask for batch and expiry">i</button>
+        </h2>
+        <label for="f-product">Product</label>
+        <select id="f-product">
+          <option value="wegovy24">Wegovy 2.4 mg (FlexTouch)</option>
+          <option value="fiasp">Fiasp 100 U/mL (FlexTouch)</option>
+          <option value="novorapid">NovoRapid 100 U/mL (FlexTouch)</option>
+          <option value="tresiba">Tresiba 200 U/mL (FlexTouch)</option>
+          <option value="custom">Something else…</option>
+        </select>
+        <div id="custom-name-wrap" hidden>
+          <label for="f-name">Product name</label>
+          <input type="text" id="f-name" autocomplete="off" placeholder="e.g. Ozempic 1 mg">
+        </div>
+        <label for="f-capacity">Pen capacity</label>
+        <select id="f-capacity"></select>
+        <div id="custom-cap-wrap" hidden>
+          <div class="row">
+            <div><label for="f-cap-units">Total medicine</label><input type="number" id="f-cap-units" inputmode="decimal" placeholder="9.6"></div>
+            <div><label for="f-cap-unitname">Unit</label><input type="text" id="f-cap-unitname" placeholder="mg"></div>
+          </div>
+        </div>
+        <label for="f-clicks">Total clicks in the pen</label>
+        <input type="number" id="f-clicks" inputmode="numeric">
+        <p class="hint" id="clicks-hint">Pre-filled for this pen. Override it if your pen is different.</p>
+        <div class="row">
+          <div><label for="f-batch">Batch no.</label><input type="text" id="f-batch" autocomplete="off" placeholder="LP1234"></div>
+          <div><label for="f-expiry">Expiry</label><input type="month" id="f-expiry"></div>
+        </div>
+        <label for="f-freq">Dose frequency</label>
+        <select id="f-freq">
+          <option value="7">Every 7 days (weekly)</option>
+          <option value="1">Every day</option>
+          <option value="3.5">Twice a week</option>
+          <option value="14">Every 14 days</option>
+        </select>
+        <div style="margin-top:16px">
+          <button class="btn" id="save-pen">Save pen</button>
+          <button class="btn secondary" id="cancel-setup" hidden>Cancel</button>
+        </div>
+      </section>
+
+      <!-- DOSE MODE -->
+      <section class="card" id="dose-card" hidden>
+        <h2 id="dose-h">Your dose</h2>
+        <div class="seg" role="group" aria-label="Dose units">
+          <button id="seg-units" aria-pressed="true">mg</button>
+          <button id="seg-clicks" aria-pressed="false">clicks</button>
+        </div>
+        <div class="chips" id="chips" role="group" aria-label="Common doses"></div>
+        <div class="doserow">
+          <button class="step" id="minus" aria-label="One click less">−</button>
+          <input id="f-dose" type="number" inputmode="decimal" aria-label="Dose amount" step="any">
+          <button class="step" id="plus" aria-label="One click more">+</button>
+        </div>
+        <div class="readout" aria-live="polite" id="readout">
+          <div class="big" id="readout-big">8 clicks</div>
+          <div class="sub" id="readout-sub">counter will show ≈ 0.26 mg</div>
+        </div>
+        <label for="f-date">Date of dose</label>
+        <input type="date" id="f-date">
+        <div style="margin-top:14px">
+          <button class="btn" id="dose-now">Dose now</button>
+        </div>
+        <div id="warnings" aria-live="polite"></div>
+        <div class="stats" id="stats"></div>
+        <h2 style="margin-top:16px">Recent doses</h2>
+        <ul class="history" id="history"><li style="border:0;color:var(--ink-soft)">No doses yet</li></ul>
+        <div style="margin-top:16px">
+          <button class="btn secondary" id="edit-pen">Edit this pen’s data</button>
+          <button class="btn danger" id="trash-pen">Trash this pen</button>
+        </div>
+      </section>
+
+      <footer>Prototype — data lives in this page only. Accounts with passkey + encrypted sync come later.<br>
+        counta helps you count clicks; it isn’t medical advice.</footer>
+    </div>
+  </main>
+</div>
+
+<!-- dialogs -->
+<dialog id="confirm-dlg" aria-labelledby="confirm-title">
+  <h3 id="confirm-title">Record this dose?</h3>
+  <div class="confirm-big" id="confirm-clicks">8 clicks</div>
+  <div class="confirm-sub" id="confirm-mg">≈ 0.26 mg · today</div>
+  <button class="btn" id="confirm-yes">Yes, I dosed</button>
+  <button class="btn secondary" id="confirm-no">Cancel</button>
+</dialog>
+
+<dialog id="info-dlg" aria-labelledby="info-title">
+  <h3 id="info-title">Why batch &amp; expiry?</h3>
+  <p>We use the <strong>expiry</strong> to warn you if you won’t finish the pen in time at your dose frequency,
+     and the <strong>batch number</strong> so we can flag recalls or known bad batches.
+     Both stay on your pen’s record — nothing else is done with them.</p>
+  <button class="btn secondary" id="info-close">Close</button>
+</dialog>
+
+<dialog id="trash-dlg" aria-labelledby="trash-title">
+  <h3 id="trash-title">Trash this pen?</h3>
+  <p>This clears the pen and its dose history from the prototype.</p>
+  <button class="btn danger" id="trash-yes">Trash pen</button>
+  <button class="btn secondary" id="trash-no">Keep pen</button>
+</dialog>
+
+<div class="visually-hidden" aria-live="polite" id="sr-live"></div>
+
+<script>
+'use strict';
+/* ============ product presets ============ */
+const PRESETS = {
+  wegovy24: { name:'Wegovy', strength:'2.4 mg', unit:'mg', decimals:2,
+    capacities:[{label:'4 doses · 9.6 mg · 3 mL', units:9.6, ml:3, clicks:296}],
+    maxDialClicks:74, common:[0.25,0.5,1,1.7,2.4], freq:'7',
+    theme:{'--c-body':'#F2F1EE','--c-body-dark':'#D9D8D4','--c-accent':'#7FD1C8','--c-label':'#FFFFFF','--c-text':'#123B6D','--c-liquid':'#F2FAF9','--c-button':'#C9C8C4','--c-button-detail':'#8F8E8A'} },
+  fiasp: { name:'Fiasp', strength:'100 U/mL', unit:'U', decimals:0,
+    capacities:[{label:'3 mL · 300 U', units:300, ml:3, clicks:300}],
+    maxDialClicks:80, common:[2,4,6,8,10], freq:'1',
+    theme:{'--c-body':'#E65300','--c-body-dark':'#C24400','--c-accent':'#F7C948','--c-label':'#FFFDF5','--c-text':'#1B3A6B','--c-liquid':'#EAF4FB','--c-button':'#E65300','--c-button-detail':'#B03A12'} },
+  novorapid: { name:'NovoRapid', strength:'100 U/mL', unit:'U', decimals:0,
+    capacities:[{label:'3 mL · 300 U', units:300, ml:3, clicks:300}],
+    maxDialClicks:80, common:[2,4,6,8,10], freq:'1',
+    theme:{'--c-body':'#E8E5DF','--c-body-dark':'#C9C5BD','--c-accent':'#F08A24','--c-label':'#FFFFFF','--c-text':'#1B3A6B','--c-liquid':'#EAF4FB','--c-button':'#F08A24','--c-button-detail':'#B85F0D'} },
+  tresiba: { name:'Tresiba', strength:'200 U/mL', unit:'U', decimals:0, unitsPerClick:2,
+    capacities:[{label:'3 mL · 600 U', units:600, ml:3, clicks:300}],
+    maxDialClicks:80, common:[10,20,30,40], freq:'1',
+    theme:{'--c-body':'#2E5E4E','--c-body-dark':'#204437','--c-accent':'#9CD5C5','--c-label':'#FBFFFD','--c-text':'#123B2E','--c-liquid':'#EAF4FB','--c-button':'#2E5E4E','--c-button-detail':'#16332A'} },
+  custom: { name:'', strength:'', unit:'mg', decimals:2, capacities:[], maxDialClicks:Infinity, common:[], freq:'7',
+    theme:{'--c-body':'#8B9DC3','--c-body-dark':'#6B7FA8','--c-accent':'#DCE3F0','--c-label':'#FFFFFF','--c-text':'#1B3A6B','--c-liquid':'#EAF4FB','--c-button':'#8B9DC3','--c-button-detail':'#5A6B8C'} },
+};
+const PISTON_TRAVEL = 160;
+const $ = id => document.getElementById(id);
+
+/* ============ state ============ */
+let pen = null;          // {productKey,name,strength,unit,decimals,capUnits,capMl,totalClicks,batch,expiry,freqDays,maxDialClicks,common,theme}
+let doseClicks = 8;      // canonical dose selection, in clicks
+let entryUnit = 'units'; // 'units' | 'clicks'
+let history = [];        // {date:'YYYY-MM-DD', clicks, units}
+
+const usedClicks = () => history.reduce((s,h)=>s+h.clicks,0);
+const remainingClicks = () => Math.max(0, pen.totalClicks - usedClicks());
+const unitsPerClick = () => pen.capUnits / pen.totalClicks;
+const fmtU = v => pen.decimals ? (Math.round(v*100)/100).toFixed(2).replace(/0$/,'').replace(/\.$/,'') : Math.round(v).toString();
+const clicksFor = u => Math.round(u / unitsPerClick());
+const unitsForClicks = c => c * unitsPerClick();
+const todayISO = () => new Date().toISOString().slice(0,10);
+
+/* ============ pen svg ============ */
+const svg = $('pen-svg');
+function paintPen(){
+  if(!pen) return;
+  for(const [k,v] of Object.entries(pen.theme)) svg.style.setProperty(k,v);
+  const n = svg.querySelector('#product-name');
+  n.textContent = pen.name || 'My pen';
+  n.removeAttribute('textLength');
+  if(n.getComputedTextLength() > 118){ n.setAttribute('textLength',118); n.setAttribute('lengthAdjust','spacingAndGlyphs'); }
+  svg.querySelector('#product-strength').textContent = pen.strength;
+  svg.querySelector('#label-batch').textContent = 'LOT ' + (pen.batch || '—');
+  svg.querySelector('#label-expiry').textContent = 'EXP ' + (pen.expiry ? pen.expiry.slice(5,7)+'/'+pen.expiry.slice(0,4) : '—');
+  const f = pen.totalClicks ? remainingClicks()/pen.totalClicks : 1;
+  svg.querySelector('#piston-assembly').style.transform = `translateY(${(1-f)*PISTON_TRAVEL}px)`;
+  svg.querySelector('#dose-value').textContent = fmtU(unitsForClicks(doseClicks));
+}
+function showBack(back){
+  svg.classList.toggle('show-back', back);
+  $('pen-caption').textContent = back ? 'Back of pen — batch & expiry' : 'Front of pen';
+}
+
+/* ============ setup mode ============ */
+function fillSetupForm(key){
+  const p = PRESETS[key];
+  $('custom-name-wrap').hidden = key!=='custom';
+  const cap = $('f-capacity');
+  cap.innerHTML = '';
+  p.capacities.forEach((c,i)=>cap.append(new Option(c.label, i)));
+  cap.append(new Option('Custom…','custom'));
+  cap.value = p.capacities.length ? '0' : 'custom';
+  $('custom-cap-wrap').hidden = cap.value!=='custom';
+  $('f-clicks').value = p.capacities[0]?.clicks ?? '';
+  $('clicks-hint').textContent = p.capacities.length
+    ? `Pre-filled: ${p.capacities[0].clicks} clicks (${p.name} ${p.capacities[0].label}). Override for a custom pen.`
+    : 'Count from your pen’s dose table, or dial a full pen to check.';
+  $('f-freq').value = p.freq;
+}
+function enterSetup(fromDose){
+  $('setup-card').hidden = false; $('dose-card').hidden = true;
+  $('cancel-setup').hidden = !fromDose;
+  showBack(true);
+  $('f-product').focus({preventScroll:true});
+}
+function saveP(){
+  const key = $('f-product').value, p = PRESETS[key];
+  const capSel = $('f-capacity').value;
+  let capUnits, capMl, unitName = p.unit;
+  if(capSel==='custom'){
+    capUnits = parseFloat($('f-cap-units').value) || 0;
+    capMl = null;
+    if(key==='custom') unitName = ($('f-cap-unitname').value || 'mg').trim();
+  } else { const c = p.capacities[+capSel]; capUnits = c.units; capMl = c.ml; }
+  const totalClicks = parseInt($('f-clicks').value, 10);
+  if(!capUnits || !totalClicks){ alert('Need pen capacity and total clicks to do click math.'); return; }
+  pen = {
+    productKey:key,
+    name: key==='custom' ? ($('f-name').value || 'My pen') : p.name,
+    strength: key==='custom' ? '' : p.strength,
+    unit:unitName, decimals:p.decimals,
+    capUnits, capMl, totalClicks,
+    batch: $('f-batch').value.trim(), expiry: $('f-expiry').value,
+    freqDays: parseFloat($('f-freq').value),
+    maxDialClicks: p.maxDialClicks, common: p.common, theme: p.theme,
+  };
+  doseClicks = pen.common.length ? clicksFor(pen.common[0]) : Math.min(8, pen.totalClicks);
+  $('chip').textContent = pen.name + (pen.strength ? ' · '+pen.strength : '');
+  $('setup-card').hidden = true; $('dose-card').hidden = false;
+  showBack(false); buildChips(); renderDose(); paintPen();
+  $('sr-live').textContent = 'Pen saved. Dose screen ready.';
+}
+
+/* ============ dose mode ============ */
+function buildChips(){
+  const box = $('chips'); box.innerHTML='';
+  pen.common.forEach(u=>{
+    const b = document.createElement('button');
+    b.textContent = fmtU(u)+' '+pen.unit;
+    b.addEventListener('click',()=>{ doseClicks = clicksFor(u); renderDose(); });
+    box.append(b);
+  });
+}
+function clampDose(){
+  const max = Math.min(pen.maxDialClicks, remainingClicks() || pen.maxDialClicks);
+  doseClicks = Math.max(1, Math.min(doseClicks, max===0?1:max));
+}
+function renderDose(){
+  clampDose();
+  const u = unitsForClicks(doseClicks);
+  // segmented state
+  $('seg-units').textContent = pen.unit;
+  $('seg-units').setAttribute('aria-pressed', entryUnit==='units');
+  $('seg-clicks').setAttribute('aria-pressed', entryUnit==='clicks');
+  // input
+  const inp = $('f-dose');
+  inp.value = entryUnit==='clicks' ? doseClicks : fmtU(u);
+  inp.step = entryUnit==='clicks' ? 1 : 'any';
+  // readout: always leads with the thing you DO on the pen
+  $('readout-big').textContent = doseClicks + (doseClicks===1?' click':' clicks');
+  $('readout-sub').textContent = `counter will show ≈ ${fmtU(u)} ${pen.unit}`;
+  // chips pressed state
+  [...$('chips').children].forEach((b,i)=>b.setAttribute('aria-pressed', clicksFor(pen.common[i])===doseClicks));
+  renderStatsWarnings(); paintPen();
+}
+function renderStatsWarnings(){
+  const rc = remainingClicks(), ru = unitsForClicks(rc);
+  const rd = doseClicks>0 ? Math.floor(rc/doseClicks) : 0;
+  const ml = pen.capMl ? ` · ${(pen.capMl*rc/pen.totalClicks).toFixed(2)} mL` : '';
+  $('stats').innerHTML =
+    `<div class="stat"><div class="v">${fmtU(ru)}</div><div class="k">${pen.unit} left${ml?'':''}</div></div>`+
+    `<div class="stat"><div class="v">${rd}</div><div class="k">doses left</div></div>`+
+    `<div class="stat"><div class="v">${rc}</div><div class="k">clicks left</div></div>`;
+  const w = [];
+  const today = new Date(todayISO());
+  if(pen.expiry){
+    const expEnd = new Date(+pen.expiry.slice(0,4), +pen.expiry.slice(5,7), 0); // last day of expiry month
+    if(expEnd < today) w.push(['red', `This pen expired ${pen.expiry.slice(5,7)}/${pen.expiry.slice(0,4)}.`]);
+    else if(rd>0){
+      const runout = new Date(today); runout.setDate(runout.getDate() + Math.ceil(rd*pen.freqDays));
+      if(runout > expEnd){
+        const dosesByExp = Math.floor((expEnd-today)/(864e5*pen.freqDays));
+        w.push(['amber', `Heads-up: at every ${pen.freqDays} day${pen.freqDays>1?'s':''}, you’ll only fit ~${dosesByExp} more dose${dosesByExp===1?'':'s'} before expiry (${pen.expiry.slice(5,7)}/${pen.expiry.slice(0,4)}) — ${rd} doses remain in the pen.`]);
+      }
+    }
+  }
+  if(rc===0) w.push(['red','This pen is empty.']);
+  else if(rd<=1) w.push(['amber', rd===1?'Running out: last full dose in this pen.':'Not enough left for a full dose.']);
+  $('warnings').innerHTML = w.map(([c,t])=>`<div class="warn ${c}"><span aria-hidden="true">${c==='red'?'⛔':'⚠️'}</span><span>${t}</span></div>`).join('');
+}
+function renderHistory(){
+  const ul = $('history');
+  if(!history.length){ ul.innerHTML = '<li style="border:0;color:var(--ink-soft)">No doses yet</li>'; return; }
+  const short = iso => new Date(iso+'T00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  ul.innerHTML = history.slice(-5).reverse().map(h=>
+    `<li><span>${short(h.date)}</span><span><strong>${h.clicks} clicks</strong> <span class="mgv">≈ ${fmtU(h.units)} ${pen.unit}</span></span></li>`).join('');
+}
+
+/* ============ events ============ */
+$('f-product').addEventListener('change', e=>fillSetupForm(e.target.value));
+$('f-capacity').addEventListener('change', e=>{
+  const key = $('f-product').value, p = PRESETS[key];
+  $('custom-cap-wrap').hidden = e.target.value!=='custom';
+  if(e.target.value!=='custom') $('f-clicks').value = p.capacities[+e.target.value].clicks;
+});
+$('save-pen').addEventListener('click', saveP);
+$('cancel-setup').addEventListener('click', ()=>{ $('setup-card').hidden=true; $('dose-card').hidden=false; showBack(false); });
+$('edit-pen').addEventListener('click', ()=>{
+  $('f-batch').value = pen.batch; $('f-expiry').value = pen.expiry;
+  $('f-clicks').value = pen.totalClicks; enterSetup(true);
+});
+$('seg-units').addEventListener('click', ()=>{ entryUnit='units'; renderDose(); $('f-dose').focus(); });
+$('seg-clicks').addEventListener('click', ()=>{ entryUnit='clicks'; renderDose(); $('f-dose').focus(); });
+$('minus').addEventListener('click', ()=>{ doseClicks--; renderDose(); });
+$('plus').addEventListener('click', ()=>{ doseClicks++; renderDose(); });
+$('f-dose').addEventListener('change', e=>{
+  const v = parseFloat(e.target.value)||0;
+  doseClicks = entryUnit==='clicks' ? Math.round(v) : clicksFor(v);
+  renderDose();
+});
+$('dose-now').addEventListener('click', ()=>{
+  $('confirm-clicks').textContent = doseClicks + (doseClicks===1?' click':' clicks');
+  const d = $('f-date').value || todayISO();
+  $('confirm-mg').textContent = `≈ ${fmtU(unitsForClicks(doseClicks))} ${pen.unit} · ${d===todayISO()?'today':d}`;
+  $('confirm-dlg').showModal();
+});
+$('confirm-yes').addEventListener('click', ()=>{
+  history.push({date: $('f-date').value || todayISO(), clicks: doseClicks, units: unitsForClicks(doseClicks)});
+  $('confirm-dlg').close();
+  renderHistory(); renderDose();
+  $('sr-live').textContent = `Dose recorded: ${doseClicks} clicks. ${remainingClicks()} clicks remain.`;
+});
+$('confirm-no').addEventListener('click', ()=>$('confirm-dlg').close());
+$('info-btn').addEventListener('click', ()=>$('info-dlg').showModal());
+$('info-close').addEventListener('click', ()=>$('info-dlg').close());
+$('trash-pen').addEventListener('click', ()=>$('trash-dlg').showModal());
+$('trash-no').addEventListener('click', ()=>$('trash-dlg').close());
+$('trash-yes').addEventListener('click', ()=>{
+  $('trash-dlg').close(); pen=null; history=[]; $('chip').textContent='No pen yet';
+  fillSetupForm($('f-product').value); enterSetup(false);
+});
+
+/* ============ boot ============ */
+$('f-date').value = todayISO();
+fillSetupForm('wegovy24');
+enterSetup(false);
+</script>
+</body>
+</html>

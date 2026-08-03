@@ -1,0 +1,177 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 660" width="220" height="660"
+     class="counta-pen" role="img" aria-labelledby="pen-title"
+     style="--c-body:#E65300; --c-body-dark:#C24400; --c-accent:#F7C948; --c-label:#FFFDF5; --c-text:#1B3A6B; --c-liquid:#EAF4FB; --c-button:#E65300; --c-button-detail:#B03A12; --c-neck:#E8E4DD; --c-scale:#26324B; --c-piston:#8E959F; --c-rod:#5A616C;">
+  <title id="pen-title">Injection pen, cap removed, needle end down</title>
+  <!--
+    counta-pen.svg — dynamic hooks
+    ==============================
+    Orientation: dose button at TOP, needle mount at BOTTOM.
+    The piston moves DOWN toward the needle as the pen is used,
+    matching the physical pen held needle-down.
+
+    THEME  (set CSS custom properties on the <svg> element):
+      -c-body        main plastic colour            -c-accent  label stripes
+      -c-body-dark   dose selector                  -c-label   label background
+      -c-text        product name / dark details    -c-liquid  medicine colour
+      -c-button      dose button                    -c-button-detail  button lines
+      -c-neck  -c-scale  -c-piston  -c-rod
+
+    CONTENT:
+      #product-name      <text> product name on the label (rotated)
+      #product-strength  <text> strength / concentration on the label
+      #dose-value        <text> number shown in the dose counter
+
+    STATE:
+      #piston-assembly   set transform="translate(0, (1 - fillFraction) * 160)"
+                         fillFraction 1 = full pen (piston at top of cartridge),
+                         0 = empty (piston at bottom, next to the needle).
+                         Piston, rod and liquid all move together (clipped).
+      #insulin-scale     tick marks — hide or rebuild per product
+      #dose-pointer      alignment mark above the counter
+
+    STRUCTURE (top to bottom):
+      #dose-button > #dose-selector > #dose-counter > #label
+      > #cartridge-holder > #needle-mount
+  -->
+  <defs>
+    <linearGradient id="cyl-shade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.18" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#000000" stop-opacity="0.08"/>
+      <stop offset="1"    stop-color="#000000" stop-opacity="0.25"/>
+    </linearGradient>
+    <linearGradient id="glass-shade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0.65"/>
+      <stop offset="0.2"  stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1"    stop-color="#000000" stop-opacity="0.12"/>
+    </linearGradient>
+    <clipPath id="cartridge-clip">
+      <rect x="82" y="384" width="56" height="178" rx="6"/>
+    </clipPath>
+  </defs>
+
+  <g id="pen">
+
+    <!-- ================= dose button (top) ================= -->
+    <g id="dose-button">
+      <rect id="button-face" x="80" y="22" width="60" height="54" rx="14"
+            fill="var(--c-button, #E65300)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <g id="button-lines" fill="var(--c-button-detail, #B03A12)">
+        <rect x="102" y="32" width="5" height="34" rx="2.5"/>
+        <rect x="113" y="32" width="5" height="34" rx="2.5"/>
+      </g>
+      <rect id="button-stem" x="86" y="74" width="48" height="18"
+            fill="var(--c-body-dark, #C24400)" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>
+    </g>
+
+    <!-- ================= dose selector ================= -->
+    <g id="dose-selector">
+      <rect x="70" y="92" width="80" height="56" rx="8"
+            fill="var(--c-body-dark, #C24400)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <g id="selector-ribs" stroke="rgba(0,0,0,0.22)" stroke-width="2">
+        <line x1="80"  y1="98" x2="80"  y2="142"/>
+        <line x1="90"  y1="98" x2="90"  y2="142"/>
+        <line x1="100" y1="98" x2="100" y2="142"/>
+        <line x1="110" y1="98" x2="110" y2="142"/>
+        <line x1="120" y1="98" x2="120" y2="142"/>
+        <line x1="130" y1="98" x2="130" y2="142"/>
+        <line x1="140" y1="98" x2="140" y2="142"/>
+      </g>
+    </g>
+
+    <!-- ================= body + counter + label ================= -->
+    <rect id="body-shell" x="74" y="148" width="72" height="230"
+          fill="var(--c-body, #E65300)" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>
+
+    <g id="dose-counter">
+      <rect id="dose-pointer" x="107.5" y="154" width="5" height="16" rx="2.5"
+            fill="#ffffff" stroke="rgba(0,0,0,0.3)" stroke-width="1"/>
+      <rect id="counter-window" x="88" y="176" width="44" height="32" rx="4"
+            fill="#ffffff" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>
+      <text id="dose-value" x="110" y="199" text-anchor="middle"
+            font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+            font-size="19" font-weight="700" fill="#1F2733">12</text>
+    </g>
+
+    <g id="label">
+      <rect id="label-bg" x="79" y="228" width="62" height="142" rx="6"
+            fill="var(--c-label, #FFFDF5)" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+      <path id="label-stripe-top" d="M 79 234 Q 79 228 85 228 L 135 228 Q 141 228 141 234 L 141 239 L 79 239 Z"
+            fill="var(--c-accent, #F7C948)"/>
+      <path id="label-stripe-bottom" d="M 79 362 L 141 362 L 141 364 Q 141 370 135 370 L 85 370 Q 79 370 79 364 Z"
+            fill="var(--c-accent, #F7C948)"/>
+      <text id="product-name" transform="translate(97, 248) rotate(90)"
+            font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+            font-size="24" font-weight="700" font-style="italic"
+            fill="var(--c-text, #1B3A6B)">Fiasp</text>
+      <text id="product-strength" transform="translate(126, 248) rotate(90)"
+            font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+            font-size="11" font-weight="500"
+            fill="#5A616C">100 U/mL</text>
+    </g>
+
+    <!-- ================= cartridge holder ================= -->
+    <g id="cartridge-holder">
+      <rect id="holder-shell" x="74" y="378" width="72" height="184" rx="4"
+            fill="#EDF1F5" stroke="#C2CCD6" stroke-width="1.5"/>
+      <rect id="cartridge-glass" x="82" y="384" width="56" height="178" rx="6"
+            fill="#FBFDFF" stroke="#C2CCD6" stroke-width="1"/>
+
+      <!-- one transform on this group sets the fill state:
+           translate(0, 0) = full · translate(0, 160) = empty -->
+      <g clip-path="url(#cartridge-clip)">
+        <g id="piston-assembly" transform="translate(0, 56)">
+          <rect id="liquid" x="82" y="402" width="56" height="300"
+                fill="var(--c-liquid, #EAF4FB)"/>
+          <rect id="piston" x="82" y="384" width="56" height="18" rx="4"
+                fill="var(--c-piston, #8E959F)" stroke="rgba(0,0,0,0.28)" stroke-width="1"/>
+          <rect x="86" y="387" width="10" height="12" rx="3" fill="#ffffff" opacity="0.3"/>
+          <rect id="piston-rod" x="103" y="84" width="14" height="300"
+                fill="var(--c-rod, #5A616C)"/>
+          <rect x="105.5" y="84" width="3" height="300" fill="#ffffff" opacity="0.25"/>
+        </g>
+      </g>
+
+      <!-- scale printed on the holder -->
+      <g id="insulin-scale" stroke="var(--c-scale, #26324B)" stroke-width="2" stroke-linecap="round">
+        <line x1="76" y1="394" x2="84" y2="394"/>
+        <line x1="76" y1="416" x2="90" y2="416"/>
+        <line x1="76" y1="438" x2="84" y2="438"/>
+        <line x1="76" y1="460" x2="90" y2="460"/>
+        <line x1="76" y1="482" x2="84" y2="482"/>
+        <line x1="76" y1="504" x2="90" y2="504"/>
+        <line x1="76" y1="526" x2="84" y2="526"/>
+        <line x1="76" y1="548" x2="90" y2="548"/>
+      </g>
+
+      <rect x="82" y="384" width="56" height="178" rx="6" fill="url(#glass-shade)" pointer-events="none"/>
+    </g>
+
+    <!-- ================= needle mount (bottom, cap off) ================= -->
+    <g id="needle-mount">
+      <path id="shoulder" d="M 74 562 L 146 562 L 146 568 Q 146 574 139 575 L 125 577 L 95 577 L 81 575 Q 74 574 74 568 Z"
+            fill="var(--c-neck, #E8E4DD)" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>
+      <rect id="neck" x="95" y="576" width="30" height="26" rx="3"
+            fill="var(--c-neck, #E8E4DD)" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>
+      <g id="neck-threads" stroke="rgba(0,0,0,0.22)" stroke-width="1.5">
+        <line x1="97" y1="582" x2="123" y2="584"/>
+        <line x1="97" y1="588" x2="123" y2="590"/>
+        <line x1="97" y1="594" x2="123" y2="596"/>
+      </g>
+      <rect id="septum" x="99" y="602" width="22" height="16" rx="5"
+            fill="#9AA1AB" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <rect x="103" y="605" width="6" height="10" rx="3" fill="#ffffff" opacity="0.35"/>
+      <rect x="95" y="576" width="30" height="42" rx="3" fill="url(#cyl-shade)" pointer-events="none"/>
+    </g>
+
+    <!-- ================= neutral cylinder shading ================= -->
+    <g id="shading" pointer-events="none">
+      <rect x="80" y="22"  width="60" height="70" rx="14" fill="url(#cyl-shade)"/>
+      <rect x="70" y="92"  width="80" height="56" rx="8" fill="url(#cyl-shade)"/>
+      <rect x="74" y="148" width="72" height="230" fill="url(#cyl-shade)"/>
+      <rect x="74" y="378" width="72" height="184" rx="4" fill="url(#cyl-shade)" opacity="0.55"/>
+    </g>
+  </g>
+</svg>

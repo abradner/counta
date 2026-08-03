@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>counta-pen.svg — dynamic demo</title>
+<style>
+  body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; margin: 0;
+         background: #f5f6f8; color: #1f2733; display: flex; min-height: 100vh; }
+  .stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .stage svg { height: min(92vh, 660px); width: auto; filter: drop-shadow(0 6px 16px rgba(0,0,0,0.15)); }
+  .panel { width: 320px; background: #fff; border-left: 1px solid #e2e5ea; padding: 24px; box-sizing: border-box; }
+  .panel h1 { font-size: 16px; margin: 0 0 16px; }
+  .panel label { display: block; font-size: 12px; font-weight: 600; margin: 14px 0 4px; color: #5a616c; }
+  .panel select, .panel input[type=text], .panel input[type=number] {
+    width: 100%; padding: 6px 8px; font-size: 14px; border: 1px solid #c9ced6; border-radius: 6px; box-sizing: border-box; }
+  .panel input[type=range] { width: 100%; }
+  .val { font-variant-numeric: tabular-nums; color: #1b3a6b; font-weight: 700; }
+  button { margin-top: 16px; width: 100%; padding: 8px; font-size: 14px; font-weight: 600;
+           border: 0; border-radius: 8px; background: #1b3a6b; color: #fff; cursor: pointer; }
+  code { background: #eef1f5; padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+  .hint { font-size: 11px; color: #8a8f98; margin-top: 18px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 660" width="220" height="660"
+     class="counta-pen" role="img" aria-labelledby="pen-title"
+     style="--c-body:#E65300; --c-body-dark:#C24400; --c-accent:#F7C948; --c-label:#FFFDF5; --c-text:#1B3A6B; --c-liquid:#EAF4FB; --c-button:#E65300; --c-button-detail:#B03A12; --c-neck:#E8E4DD; --c-scale:#26324B; --c-piston:#8E959F; --c-rod:#5A616C;">
+  <title id="pen-title">Injection pen, cap removed, needle end down</title>
+  <!--
+    counta-pen.svg — dynamic hooks
+    ==============================
+    Orientation: dose button at TOP, needle mount at BOTTOM.
+    The piston moves DOWN toward the needle as the pen is used,
+    matching the physical pen held needle-down.
+
+    THEME  (set CSS custom properties on the <svg> element):
+      -c-body        main plastic colour            -c-accent  label stripes
+      -c-body-dark   dose selector                  -c-label   label background
+      -c-text        product name / dark details    -c-liquid  medicine colour
+      -c-button      dose button                    -c-button-detail  button lines
+      -c-neck  -c-scale  -c-piston  -c-rod
+
+    CONTENT:
+      #product-name      <text> product name on the label (rotated)
+      #product-strength  <text> strength / concentration on the label
+      #dose-value        <text> number shown in the dose counter
+
+    STATE:
+      #piston-assembly   set transform="translate(0, (1 - fillFraction) * 160)"
+                         fillFraction 1 = full pen (piston at top of cartridge),
+                         0 = empty (piston at bottom, next to the needle).
+                         Piston, rod and liquid all move together (clipped).
+      #insulin-scale     tick marks — hide or rebuild per product
+      #dose-pointer      alignment mark above the counter
+
+    STRUCTURE (top to bottom):
+      #dose-button > #dose-selector > #dose-counter > #label
+      > #cartridge-holder > #needle-mount
+  -->
+  <defs>
+    <linearGradient id="cyl-shade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.18" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#000000" stop-opacity="0.08"/>
+      <stop offset="1"    stop-color="#000000" stop-opacity="0.25"/>
+    </linearGradient>
+    <linearGradient id="glass-shade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0.65"/>
+      <stop offset="0.2"  stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1"    stop-color="#000000" stop-opacity="0.12"/>
+    </linearGradient>
+    <clipPath id="cartridge-clip">
+      <rect x="82" y="384" width="56" height="178" rx="6"/>
+    </clipPath>
+  </defs>
+
+  <g id="pen">
+
+    <!-- ================= dose button (top) ================= -->
+    <g id="dose-button">
+      <rect id="button-face" x="80" y="22" width="60" height="54" rx="14"
+            fill="var(--c-button, #E65300)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <g id="button-lines" fill="var(--c-button-detail, #B03A12)">
+        <rect x="102" y="32" width="5" height="34" rx="2.5"/>
+        <rect x="113" y="32" width="5" height="34" rx="2.5"/>
+      </g>
+      <rect id="button-stem" x="86" y="74" width="48" height="18"
+            fill="var(--c-body-dark, #C24400)" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>
+    </g>
+
+    <!-- ================= dose selector ================= -->
+    <g id="dose-selector">
+      <rect x="70" y="92" width="80" height="56" rx="8"
+            fill="var(--c-body-dark, #C24400)" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <g id="selector-ribs" stroke="rgba(0,0,0,0.22)" stroke-width="2">
+        <line x1="80"  y1="98" x2="80"  y2="142"/>
+        <line x1="90"  y1="98" x2="90"  y2="142"/>
+        <line x1="100" y1="98" x2="100" y2="142"/>
+        <line x1="110" y1="98" x2="110" y2="142"/>
+        <line x1="120" y1="98" x2="120" y2="142"/>
+        <line x1="130" y1="98" x2="130" y2="142"/>
+        <line x1="140" y1="98" x2="140" y2="142"/>
+      </g>
+    </g>
+
+    <!-- ================= body + counter + label ================= -->
+    <rect id="body-shell" x="74" y="148" width="72" height="230"
+          fill="var(--c-body, #E65300)" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>
+
+    <g id="dose-counter">
+      <rect id="dose-pointer" x="107.5" y="154" width="5" height="16" rx="2.5"
+            fill="#ffffff" stroke="rgba(0,0,0,0.3)" stroke-width="1"/>
+      <rect id="counter-window" x="88" y="176" width="44" height="32" rx="4"
+            fill="#ffffff" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>
+      <text id="dose-value" x="110" y="199" text-anchor="middle"
+            font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+            font-size="19" font-weight="700" fill="#1F2733">12</text>
+    </g>
+
+    <g id="label">
+      <rect id="label-bg" x="79" y="228" width="62" height="142" rx="6"
+            fill="var(--c-label, #FFFDF5)" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>
+      <path id="label-stripe-top" d="M 79 234 Q 79 228 85 228 L 135 228 Q 141 228 141 234 L 141 239 L 79 239 Z"
+            fill="var(--c-accent, #F7C948)"/>
+      <path id="label-stripe-bottom" d="M 79 362 L 141 362 L 141 364 Q 141 370 135 370 L 85 370 Q 79 370 79 364 Z"
+            fill="var(--c-accent, #F7C948)"/>
+      <text id="product-name" transform="translate(97, 248) rotate(90)"
+            font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+            font-size="24" font-weight="700" font-style="italic"
+            fill="var(--c-text, #1B3A6B)">Fiasp</text>
+      <text id="product-strength" transform="translate(126, 248) rotate(90)"
+            font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+            font-size="11" font-weight="500"
+            fill="#5A616C">100 U/mL</text>
+    </g>
+
+    <!-- ================= cartridge holder ================= -->
+    <g id="cartridge-holder">
+      <rect id="holder-shell" x="74" y="378" width="72" height="184" rx="4"
+            fill="#EDF1F5" stroke="#C2CCD6" stroke-width="1.5"/>
+      <rect id="cartridge-glass" x="82" y="384" width="56" height="178" rx="6"
+            fill="#FBFDFF" stroke="#C2CCD6" stroke-width="1"/>
+
+      <!-- one transform on this group sets the fill state:
+           translate(0, 0) = full · translate(0, 160) = empty -->
+      <g clip-path="url(#cartridge-clip)">
+        <g id="piston-assembly" transform="translate(0, 56)">
+          <rect id="liquid" x="82" y="402" width="56" height="300"
+                fill="var(--c-liquid, #EAF4FB)"/>
+          <rect id="piston" x="82" y="384" width="56" height="18" rx="4"
+                fill="var(--c-piston, #8E959F)" stroke="rgba(0,0,0,0.28)" stroke-width="1"/>
+          <rect x="86" y="387" width="10" height="12" rx="3" fill="#ffffff" opacity="0.3"/>
+          <rect id="piston-rod" x="103" y="84" width="14" height="300"
+                fill="var(--c-rod, #5A616C)"/>
+          <rect x="105.5" y="84" width="3" height="300" fill="#ffffff" opacity="0.25"/>
+        </g>
+      </g>
+
+      <!-- scale printed on the holder -->
+      <g id="insulin-scale" stroke="var(--c-scale, #26324B)" stroke-width="2" stroke-linecap="round">
+        <line x1="76" y1="394" x2="84" y2="394"/>
+        <line x1="76" y1="416" x2="90" y2="416"/>
+        <line x1="76" y1="438" x2="84" y2="438"/>
+        <line x1="76" y1="460" x2="90" y2="460"/>
+        <line x1="76" y1="482" x2="84" y2="482"/>
+        <line x1="76" y1="504" x2="90" y2="504"/>
+        <line x1="76" y1="526" x2="84" y2="526"/>
+        <line x1="76" y1="548" x2="90" y2="548"/>
+      </g>
+
+      <rect x="82" y="384" width="56" height="178" rx="6" fill="url(#glass-shade)" pointer-events="none"/>
+    </g>
+
+    <!-- ================= needle mount (bottom, cap off) ================= -->
+    <g id="needle-mount">
+      <path id="shoulder" d="M 74 562 L 146 562 L 146 568 Q 146 574 139 575 L 125 577 L 95 577 L 81 575 Q 74 574 74 568 Z"
+            fill="var(--c-neck, #E8E4DD)" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>
+      <rect id="neck" x="95" y="576" width="30" height="26" rx="3"
+            fill="var(--c-neck, #E8E4DD)" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>
+      <g id="neck-threads" stroke="rgba(0,0,0,0.22)" stroke-width="1.5">
+        <line x1="97" y1="582" x2="123" y2="584"/>
+        <line x1="97" y1="588" x2="123" y2="590"/>
+        <line x1="97" y1="594" x2="123" y2="596"/>
+      </g>
+      <rect id="septum" x="99" y="602" width="22" height="16" rx="5"
+            fill="#9AA1AB" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+      <rect x="103" y="605" width="6" height="10" rx="3" fill="#ffffff" opacity="0.35"/>
+      <rect x="95" y="576" width="30" height="42" rx="3" fill="url(#cyl-shade)" pointer-events="none"/>
+    </g>
+
+    <!-- ================= neutral cylinder shading ================= -->
+    <g id="shading" pointer-events="none">
+      <rect x="80" y="22"  width="60" height="70" rx="14" fill="url(#cyl-shade)"/>
+      <rect x="70" y="92"  width="80" height="56" rx="8" fill="url(#cyl-shade)"/>
+      <rect x="74" y="148" width="72" height="230" fill="url(#cyl-shade)"/>
+      <rect x="74" y="378" width="72" height="184" rx="4" fill="url(#cyl-shade)" opacity="0.55"/>
+    </g>
+  </g>
+</svg>
+
+  </div>
+  <div class="panel">
+    <h1>counta-pen dynamic hooks</h1>
+
+    <label>Product theme</label>
+    <select id="ctl-product">
+      <option value="fiasp" selected>Fiasp (FlexTouch)</option>
+      <option value="novorapid">NovoRapid (FlexTouch)</option>
+      <option value="tresiba">Tresiba (FlexTouch)</option>
+      <option value="wegovy">Wegovy (FlexTouch)</option>
+    </select>
+
+    <label>Product name (free text)</label>
+    <input type="text" id="ctl-name" value="Fiasp">
+
+    <label>Strength</label>
+    <input type="text" id="ctl-strength" value="100 U/mL">
+
+    <label>Dose counter</label>
+    <input type="text" id="ctl-dose" value="12">
+
+    <label>Remaining: <span class="val" id="ctl-fill-val">65%</span></label>
+    <input type="range" id="ctl-fill" min="0" max="100" value="65">
+
+    <button id="ctl-dose-now">Dose now (−5%)</button>
+
+    <div class="hint">
+      Everything on the left is one SVG. The controls only touch:
+      <code>#product-name</code>, <code>#product-strength</code>,
+      <code>#dose-value</code>, the <code>transform</code> on
+      <code>#piston-assembly</code>, and CSS variables on the
+      <code>&lt;svg&gt;</code> element for the theme.
+    </div>
+  </div>
+
+<script>
+  // ---- Minimal API you can lift straight into the webapp -------------------
+  const PISTON_TRAVEL = 160; // px, matches the SVG's cartridge geometry
+
+  const CountaPen = {
+    el: document.querySelector('.counta-pen'),
+    setTheme(vars) {
+      for (const [k, v] of Object.entries(vars)) this.el.style.setProperty(k, v);
+    },
+    setProduct(name, strength) {
+      const n = this.el.querySelector('#product-name');
+      n.textContent = name;
+      // shrink long names to fit the label
+      n.removeAttribute('textLength');
+      if (n.getComputedTextLength() > 126) {
+        n.setAttribute('textLength', 126);
+        n.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      }
+      if (strength != null)
+        this.el.querySelector('#product-strength').textContent = strength;
+    },
+    setDose(v) { this.el.querySelector('#dose-value').textContent = v; },
+    setFill(f) { // 1 = full, 0 = empty — piston travels DOWN toward the needle as f drops
+      f = Math.max(0, Math.min(1, f));
+      this.el.querySelector('#piston-assembly')
+        .setAttribute('transform', `translate(0, ${(1 - f) * PISTON_TRAVEL})`);
+    },
+  };
+
+  const THEMES = {
+    fiasp: { name: 'Fiasp', strength: '100 U/mL', vars: {
+      '--c-body': '#E65300', '--c-body-dark': '#C24400', '--c-accent': '#F7C948',
+      '--c-label': '#FFFDF5', '--c-text': '#1B3A6B', '--c-liquid': '#EAF4FB',
+      '--c-button': '#E65300', '--c-button-detail': '#B03A12' } },
+    novorapid: { name: 'NovoRapid', strength: '100 U/mL', vars: {
+      '--c-body': '#E8E5DF', '--c-body-dark': '#C9C5BD', '--c-accent': '#F08A24',
+      '--c-label': '#FFFFFF', '--c-text': '#1B3A6B', '--c-liquid': '#EAF4FB',
+      '--c-button': '#F08A24', '--c-button-detail': '#B85F0D' } },
+    tresiba: { name: 'Tresiba', strength: '200 U/mL', vars: {
+      '--c-body': '#2E5E4E', '--c-body-dark': '#204437', '--c-accent': '#9CD5C5',
+      '--c-label': '#FBFFFD', '--c-text': '#123B2E', '--c-liquid': '#EAF4FB',
+      '--c-button': '#2E5E4E', '--c-button-detail': '#16332A' } },
+    wegovy: { name: 'Wegovy', strength: '0.25 mg', vars: {
+      '--c-body': '#F2F1EE', '--c-body-dark': '#D9D8D4', '--c-accent': '#7FD1C8',
+      '--c-label': '#FFFFFF', '--c-text': '#123B6D', '--c-liquid': '#F2FAF9',
+      '--c-button': '#C9C8C4', '--c-button-detail': '#8F8E8A' } },
+  };
+  const DOSES = { fiasp: '12', novorapid: '12', tresiba: '10', wegovy: '0.25' };
+
+  // ---- wire up controls ----------------------------------------------------
+  const $ = id => document.getElementById(id);
+  $('ctl-product').addEventListener('change', e => {
+    const t = THEMES[e.target.value];
+    CountaPen.setTheme(t.vars);
+    CountaPen.setProduct(t.name, t.strength);
+    $('ctl-name').value = t.name;
+    $('ctl-strength').value = t.strength;
+    $('ctl-dose').value = DOSES[e.target.value];
+    CountaPen.setDose(DOSES[e.target.value]);
+  });
+  $('ctl-name').addEventListener('input', e => CountaPen.setProduct(e.target.value, null));
+  $('ctl-strength').addEventListener('input', e =>
+    document.querySelector('#product-strength').textContent = e.target.value);
+  $('ctl-dose').addEventListener('input', e => CountaPen.setDose(e.target.value));
+  $('ctl-fill').addEventListener('input', e => {
+    $('ctl-fill-val').textContent = e.target.value + '%';
+    CountaPen.setFill(e.target.value / 100);
+  });
+  $('ctl-dose-now').addEventListener('click', () => {
+    const r = $('ctl-fill');
+    r.value = Math.max(0, r.value - 5);
+    r.dispatchEvent(new Event('input'));
+  });
+</script>
+</body>
+</html>
