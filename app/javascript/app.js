@@ -89,11 +89,50 @@ function adoptRow(p, row) {
   p.purgeAfter = row.purge_after;
 }
 
+// Union two dose histories. Doses are append-only per pen, so a merge is a
+// union — never a choice between versions. Entries written before dose ids
+// existed fall back to a content signature, which can only collide for two
+// genuinely identical doses on the same date, where dropping one is the safer
+// error than inventing one.
+function mergeHistory(mine, theirs) {
+  const key = e => e.id || `legacy:${e.date}:${e.clicks}`;
+  const merged = new Map();
+  for (const entry of [ ...theirs, ...mine ]) merged.set(key(entry), entry);
+  return byDate([ ...merged.values() ]);
+}
+
 async function persistPen(p, { archived = p.archivedAt != null } = {}) {
-  const body = { blob: await encryptPayload(dek, p.data), archived };
-  adoptRow(p, p.id
-    ? await api(`/api/pens/${p.id}`, { method: "PUT", body })
-    : await api("/api/pens", { method: "POST", body }));
+  if (!p.id) {
+    adoptRow(p, await api("/api/pens", {
+      method: "POST", body: { blob: await encryptPayload(dek, p.data), archived }
+    }));
+    return;
+  }
+
+  const write = async () => api(`/api/pens/${p.id}`, {
+    method: "PUT",
+    body: {
+      blob: await encryptPayload(dek, p.data),
+      archived,
+      // What this write is based on. The server rejects it if the stored row
+      // has moved on, rather than letting a stale tab overwrite a whole dose
+      // history (issue #2).
+      expected_updated_at: p.updatedAt
+    }
+  });
+
+  try {
+    adoptRow(p, await write());
+  } catch (e) {
+    if (e.status !== 409) throw e;
+    // Another device got there first. Merge its history with ours and retry
+    // once against the version it wrote — a second conflict means something
+    // is writing continuously, and failing loudly beats looping.
+    const theirs = await decryptPayload(dek, e.body.blob);
+    p.data.history = mergeHistory(p.data.history || [], theirs.history || []);
+    p.updatedAt = e.body.updated_at;
+    adoptRow(p, await write());
+  }
 }
 
 async function loadPens() {
@@ -735,7 +774,11 @@ function wire() {
   });
   $("confirm-yes").addEventListener("click", async () => {
     $("confirm-dlg").close();
-    const entry = { date: $("f-date").value || todayISO(), clicks: doseClicks, units: unitsForClicks(doseClicks) };
+    // Stable id per dose so a merge can tell "the same dose, seen twice"
+    // from "two identical doses on the same day", which are indistinguishable
+    // by their contents alone.
+    const entry = { id: crypto.randomUUID(), date: $("f-date").value || todayISO(),
+                    clicks: doseClicks, units: unitsForClicks(doseClicks) };
     pen().history.push(entry);
     try {
       await persistPen(activePen);
@@ -835,6 +878,25 @@ window.countaTest = {
     if (!rows.length) throw new Error("no pens");
     const data = await decryptPayload(dek, rows[0].blob);
     return data.probe;
+  },
+  // Simulates a second device writing to the same pen: reads the current
+  // row, appends a dose, and writes it back correctly. The open UI's cached
+  // updatedAt then points at a superseded version — exactly the stale-tab
+  // situation, produced through the real API rather than by faking a 409.
+  async simulateOtherDevice(dateISO) {
+    const [ row ] = await api("/api/pens");
+    const data = await decryptPayload(dek, row.blob);
+    data.history.push({ id: crypto.randomUUID(), date: dateISO, clicks: 8,
+                        units: 8 * (data.capUnits / data.totalClicks) });
+    await api(`/api/pens/${row.id}`, { method: "PUT", body: {
+      blob: await encryptPayload(dek, data), archived: row.archived_at != null,
+      expected_updated_at: row.updated_at
+    } });
+    return data.history.length;
+  },
+  async historyFromServer() {
+    const [ row ] = await api("/api/pens");
+    return (await decryptPayload(dek, row.blob)).history;
   },
   // Exact string the ICS download would contain (same code path).
   icsPreview() {
