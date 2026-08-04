@@ -1,14 +1,30 @@
 Rails.application.routes.draw do
-  # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
+  root "home#index"
 
-  # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
-  # Can be used by load balancers and uptime monitors to verify that the app is live.
+  # WebAuthn ceremonies. Registration doubles as signup (no session) and
+  # add-passkey (session required — the DEK must be in client memory to wrap
+  # for the new credential, so this flow only exists inside the account panel).
+  scope :webauthn do
+    post "registration/options", to: "webauthn_registrations#options"
+    post "registration", to: "webauthn_registrations#create"
+    post "authentication/options", to: "webauthn_sessions#options"
+    post "authentication", to: "webauthn_sessions#create"
+    delete "session", to: "webauthn_sessions#destroy"
+  end
+
+  # Kit-based recovery: possession of the recovery master key (proved via a
+  # derived auth secret) grants a session + the recovery-wrapped DEK.
+  post "recovery/session", to: "recoveries#create"
+
+  # Device-level walk-away-clean action; stub tonight (no push rows exist yet).
+  post "device/flush", to: "device_flushes#create"
+
+  namespace :api do
+    resources :pens, only: [ :index, :create, :update, :destroy ]
+    resources :products, only: [ :index ]
+    resources :credentials, only: [ :index ]
+    resource :account, only: [ :destroy ]
+  end
+
   get "up" => "rails/health#show", as: :rails_health_check
-
-  # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
-  # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
-  # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
-
-  # Defines the root path route ("/")
-  # root "posts#index"
 end
