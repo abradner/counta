@@ -12,6 +12,6 @@ class PenPurgeJob < ApplicationJob
   queue_as :default
 
   def perform
-    Pen.where(purge_after: ...Date.current).delete_all
+    Pen.retention_expired.delete_all
   end
 end

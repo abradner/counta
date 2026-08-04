@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_04_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_04_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -36,12 +36,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_120000) do
 
   create_table "pens", id: :uuid, default: -> { "uuidv7()" }, force: :cascade do |t|
     t.uuid "account_id", null: false
+    t.datetime "archived_at"
     t.text "blob", null: false
     t.datetime "created_at", null: false
-    t.date "purge_after"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_pens_on_account_id"
-    t.index ["purge_after"], name: "index_pens_on_purge_after"
+    t.index ["archived_at"], name: "index_pens_on_archived_at"
   end
 
   create_table "products", id: :string, force: :cascade do |t|

@@ -36,15 +36,25 @@ module Api
 
     private
 
-    # purge_after is the client-set retention TTL for archived pens (the
-    # archive state itself stays inside the encrypted blob). Nil = keep.
+    # The client sends the archive *intent*; the server stamps the time. Dates
+    # and deadlines are never calculated client-side (AGENTS.md §9.6).
     def pen_params
-      { blob: params.require(:blob), purge_after: params[:purge_after].presence }
+      archived = ActiveModel::Type::Boolean.new.cast(params[:archived])
+      archived_at = if archived
+        # Re-archiving an already-archived pen must not restart its retention
+        # clock, so an existing stamp wins.
+        current_account.pens.find_by(id: params[:id])&.archived_at || Time.current
+      end
+      { blob: params.require(:blob), archived_at: archived_at }
     end
 
+    # All times cross the wire as ISO8601 UTC; the client formats them in the
+    # viewer's local zone.
     def pen_json(pen)
-      { id: pen.id, blob: pen.blob, purge_after: pen.purge_after&.to_s,
-        updated_at: pen.updated_at.iso8601(6) }
+      { id: pen.id, blob: pen.blob,
+        archived_at: pen.archived_at&.utc&.iso8601,
+        purge_after: pen.purge_after&.utc&.iso8601,
+        updated_at: pen.updated_at.utc.iso8601(6) }
     end
   end
 end

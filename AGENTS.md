@@ -301,16 +301,24 @@ test lives** (if one exists).
    `adoptCsrfToken`), and browser-driven system specs must run with
    `ActionController::Base.allow_forgery_protection = true` → `spec/support/system.rb` (around
    hook) makes every session-rotating system spec a regression test.
-6. An archived pen's 2-year retention TTL landed a day early → `Date#toISOString()` converts to
-   UTC, and this project's users (and dev box) are UTC+10, so local midnight serialised as the
-   previous day → never use `toISOString()` for a *calendar* date; format from local getters
-   (`isoDate` in `app/javascript/app.js`) → `spec/system/multi_pen_and_archive_spec.rb` asserts
-   the exact `purge_after` date.
+6. An archived pen's 2-year retention deadline landed a day early → the browser calculated it and
+   `toISOString()` converted local midnight to the previous day in UTC+10 → **don't calculate
+   dates or deadlines in the browser at all.** The server owns them (ActiveSupport,
+   `Pen::ARCHIVE_RETENTION`), everything crosses the wire as UTC ISO8601, and the client only
+   formats for the local zone. Where a local *calendar* date is genuinely the right thing (a
+   user-entered dose date), build it from local getters, never `toISOString()` →
+   `spec/requests/pens_archive_spec.rb`.
 7. The prototype's small-screen shortcut (`.app{zoom:0.82}`) shipped into the real app and broke
    iOS layout → `zoom` doesn't scale native form controls, so date/month inputs kept their
    intrinsic width and overflowed their card → do the real responsive pass (breakpoint sizing +
    `appearance:none` on date inputs) rather than porting a prototype-only hack; treat
    "prototype only" notes in design docs as load-bearing.
+8. A spec claiming "re-saving an archived pen doesn't restart its retention clock" passed with
+   the guard deliberately removed → it drove the UI through a path that never issues a save, so
+   it asserted an unchanged value that nothing had tried to change → when a test targets an
+   invariant, revert the mechanism and watch it fail *before* trusting it; if the invariant isn't
+   reachable from the UI, test it at the layer where it is (request spec, not system spec) →
+   `spec/requests/pens_archive_spec.rb`.
 
 ## 10. Maintaining This Document
 

@@ -66,37 +66,33 @@ function showError(elId, err) {
 function clearError(elId) { $(elId).hidden = true; }
 
 /* ============ persistence (encrypted blobs) ============ */
-// Retention TTL for archived pens: 2 years from the archive date. Sent as a
-// plaintext date so the server-side purge job can honour it without reading
-// the blob; the archive state itself stays encrypted.
-function purgeAfterFor(data) {
-  if (!data.archivedOn) return null;
-  const d = new Date(data.archivedOn + "T00:00");
-  d.setFullYear(d.getFullYear() + 2);
-  return isoDate(d);
+// Archive state is server-held (pens.archived_at) — the client sends the
+// intent and renders the timestamps it gets back. It does no date arithmetic:
+// the retention deadline is derived server-side with ActiveSupport.
+function adoptRow(p, row) {
+  p.id = row.id;
+  p.updatedAt = row.updated_at;
+  p.archivedAt = row.archived_at;
+  p.purgeAfter = row.purge_after;
 }
 
-async function persistPen(p) {
-  const body = { blob: await encryptPayload(dek, p.data), purge_after: purgeAfterFor(p.data) };
-  if (p.id) {
-    const res = await api(`/api/pens/${p.id}`, { method: "PUT", body });
-    p.updatedAt = res.updated_at;
-  } else {
-    const res = await api("/api/pens", { method: "POST", body });
-    p.id = res.id;
-    p.updatedAt = res.updated_at;
-  }
+async function persistPen(p, { archived = p.archivedAt != null } = {}) {
+  const body = { blob: await encryptPayload(dek, p.data), archived };
+  adoptRow(p, p.id
+    ? await api(`/api/pens/${p.id}`, { method: "PUT", body })
+    : await api("/api/pens", { method: "POST", body }));
 }
 
 async function loadPens() {
   const rows = await api("/api/pens");
   pens = [];
-  // Expiry of archived pens is enforced server-side by PenPurgeJob against
-  // the plaintext purge_after TTL — nothing to prune here.
+  // Retention is enforced server-side by PenPurgeJob — nothing to prune here.
   for (const row of rows) {
-    pens.push({ id: row.id, updatedAt: row.updated_at, data: await decryptPayload(dek, row.blob) });
+    const p = { data: await decryptPayload(dek, row.blob) };
+    adoptRow(p, row);
+    pens.push(p);
   }
-  activePen = pens.find(p => !p.data.archivedOn) || pens[0] || null;
+  activePen = pens.find(p => !p.archivedAt) || pens[0] || null;
 }
 
 /* ============ app entry after DEK is in memory ============ */
@@ -147,7 +143,7 @@ function enterSetup(fromDose) {
   $("dose-card").hidden = true;
   $("cancel-setup").hidden = !fromDose;
   // Archive/trash live on the edit screen ("settings"), never on new-pen setup.
-  $("archive-pen-edit").hidden = !editingPen || !!editingPen.data.archivedOn;
+  $("archive-pen-edit").hidden = !editingPen || !!editingPen.archivedAt;
   $("trash-pen-edit").hidden = !editingPen;
   buildSwitcher();
   showBack(true);
@@ -184,8 +180,7 @@ async function savePenForm() {
     maxDialClicks: p.max_dial_clicks === null ? Infinity : p.max_dial_clicks,
     common: p.common_doses, theme: p.theme,
     history: editingPen ? editingPen.data.history : [],
-    registrationIds: editingPen ? editingPen.data.registrationIds : [],
-    archivedOn: editingPen ? editingPen.data.archivedOn ?? null : null
+    registrationIds: editingPen ? editingPen.data.registrationIds : []
   };
 
   if (editingPen) {
@@ -201,28 +196,32 @@ async function savePenForm() {
   announce("Pen saved. Dose screen ready.");
 }
 
-// The header chip is the pen switcher: active pens (with % remaining), an
-// Archived group, and the add-a-pen entry (docs/design-notes.md "Multi-pen").
+// The header chip is the pen switcher: pens in use, plus the add-a-pen entry
+// (docs/design-notes.md "Multi-pen"). Archived pens are deliberately absent —
+// they aren't switchable daily-use context; they live in the account panel.
 function penLabel(p) {
   const d = p.data;
-  if (d.archivedOn) return [ d.name, "archived" ].filter(Boolean).join(" · ");
   const pct = d.totalClicks ? Math.round(remainingClicksOf(d) / d.totalClicks * 100) : 100;
   return [ d.name, d.strength, `${pct}%` ].filter(Boolean).join(" · ");
+}
+
+function activePens() {
+  return pens.filter(p => !p.archivedAt);
 }
 
 function buildSwitcher() {
   const sel = $("chip");
   sel.innerHTML = "";
-  pens.filter(p => !p.data.archivedOn).forEach(p => sel.append(new Option(penLabel(p), p.id)));
-  const archived = pens.filter(p => p.data.archivedOn);
-  if (archived.length) {
-    const group = document.createElement("optgroup");
-    group.label = "Archived";
-    archived.forEach(p => group.append(new Option(penLabel(p), p.id)));
-    sel.append(group);
+  // Viewing an archived pen isn't a switchable state, so it shows as a
+  // disabled marker rather than a listed option.
+  if (activePen?.archivedAt) {
+    const marker = new Option(`${activePen.data.name} · archived`, "__archived__");
+    marker.disabled = true;
+    sel.append(marker);
   }
+  activePens().forEach(p => sel.append(new Option(penLabel(p), p.id)));
   sel.append(new Option("＋ Add a pen", "__add__"));
-  if (activePen?.id) sel.value = activePen.id;
+  sel.value = activePen?.archivedAt ? "__archived__" : activePen?.id;
   sel.hidden = pens.length === 0;
 }
 
@@ -231,13 +230,15 @@ function isExpired(d) {
   return new Date(+d.expiry.slice(0, 4), +d.expiry.slice(5, 7), 0) < new Date(todayISO());
 }
 
-function archivedCopy(d) {
-  const fmt = dt => dt.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-  const from = new Date(d.archivedOn + "T00:00");
-  const until = new Date(from);
-  until.setFullYear(until.getFullYear() + 2);
-  return `Archived ${fmt(from)}. Its dose history and batch number stay in your encrypted ` +
-    `data until ${fmt(until)}, then counta.click deletes the record automatically.`;
+// Both dates come from the server as UTC ISO8601; the browser's only job is
+// to render them in the viewer's local zone.
+const localDate = iso =>
+  new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+function archivedCopy(p) {
+  return `Archived ${localDate(p.archivedAt)}. Its dose history and batch number stay in your ` +
+    `encrypted data until ${localDate(p.purgeAfter)}, then counta.click deletes the record ` +
+    `automatically.`;
 }
 
 function enterDoseMode() {
@@ -248,7 +249,7 @@ function enterDoseMode() {
   showBack(false);
   renderHistory();
 
-  const archived = !!d.archivedOn;
+  const archived = !!activePen.archivedAt;
   $("dose-entry").hidden = archived;
   $("archived-note").hidden = !archived;
   $("unarchive-pen").hidden = !archived;
@@ -257,7 +258,7 @@ function enterDoseMode() {
   $("trash-pen").hidden = !archived;
   $("archive-pen").hidden = true;
   if (archived) {
-    $("archived-note-text").textContent = archivedCopy(d);
+    $("archived-note-text").textContent = archivedCopy(activePen);
     paintPen();
   } else {
     doseClicks = d.common.length ? clicksFor(d.common[0]) : Math.min(8, d.totalClicks);
@@ -268,15 +269,15 @@ function enterDoseMode() {
 }
 
 async function setArchived(flag) {
-  pen().archivedOn = flag ? todayISO() : null;
   try {
-    await persistPen(activePen);
+    await persistPen(activePen, { archived: flag });
   } catch (e) {
-    pen().archivedOn = flag ? null : todayISO();
     alert("Couldn’t update the pen: " + e.message);
     return;
   }
   editingPen = null;
+  // Stay on the pen: seeing its archived state (and the retention line) is
+  // the confirmation that the action landed.
   enterDoseMode();
   announce(flag ? "Pen archived. Its history is kept for 2 years." : "Pen unarchived.");
 }
@@ -303,7 +304,7 @@ function paintPen() {
   // progress-style windows show no readable number (docs/design-notes.md) —
   // drawing one on the graphic would imply the window shows the dose.
   s.querySelector("#dose-value").textContent =
-    d.counterStyle === "progress" || d.archivedOn ? "" : fmtU(unitsForClicks(doseClicks));
+    d.counterStyle === "progress" || activePen?.archivedAt ? "" : fmtU(unitsForClicks(doseClicks));
 }
 function showBack(back) {
   svg().classList.toggle("show-back", back);
@@ -482,9 +483,39 @@ async function doRecover() {
 }
 
 /* ============ account panel ============ */
+function renderArchivedList() {
+  const ul = $("archived-list");
+  const archived = pens.filter(p => p.archivedAt);
+  if (!archived.length) {
+    ul.innerHTML = '<li class="empty">No archived pens</li>';
+    return;
+  }
+  ul.innerHTML = "";
+  archived.forEach(p => {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    label.textContent = `${p.data.name} · archived ${localDate(p.archivedAt)}`;
+    const open = document.createElement("button");
+    open.className = "linklike";
+    open.textContent = "Open";
+    // Several rows means several "Open" buttons — name each one so screen
+    // reader users (and click_button) can tell them apart.
+    open.setAttribute("aria-label", `Open ${p.data.name}, archived ${localDate(p.archivedAt)}`);
+    open.addEventListener("click", () => {
+      activePen = p;
+      editingPen = null;
+      show("app-screen");
+      enterDoseMode();
+    });
+    li.append(label, open);
+    ul.append(li);
+  });
+}
+
 async function openAccountPanel() {
   clearError("account-error");
   $("acct-id").textContent = accountId;
+  renderArchivedList();
   const creds = await api("/api/credentials");
   $("passkey-list").innerHTML = creds.map((c, i) =>
     `<li><span>Passkey ${i + 1}</span><span class="mgv">added ${new Date(c.created_at).toLocaleDateString()}</span></li>`).join("");
@@ -641,7 +672,7 @@ function wire() {
     }
     pens = pens.filter(p => p !== activePen);
     editingPen = null;
-    activePen = pens.find(p => !p.data.archivedOn) || pens[0] || null;
+    activePen = activePens()[0] || pens[0] || null;
     if (activePen) {
       enterDoseMode();
     } else {

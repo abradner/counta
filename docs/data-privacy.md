@@ -39,7 +39,7 @@ Why a blob, not a row per dose: row counts + timestamps would reconstruct dosing
 | Field | Where | Why plaintext |
 |---|---|---|
 | Account activity timestamps | `accounts.created_at/updated_at`, uuidv7 PKs | Idle-account sweep; ops hygiene. Accepted leak: "this account touched the server at T". |
-| Archived-pen retention TTL | `pens.purge_after` (date, nullable) | Server-side retention sweep (`PenPurgeJob`) for archived pens — a client-side prune can't run for a user who never returns, so the 2-year claim needs a server mechanism. Client-set: archive date + 2 years. Accepted leak: "this pen was archived on ~date T−2y"; nil for in-use pens. Added 2026-08-04. |
+| Archived-pen marker | `pens.archived_at` (timestamp, nullable) | Server-side retention sweep (`PenPurgeJob`) for archived pens — a client-side prune can't run for a user who never returns, so the 2-year claim needs a server mechanism. Server-stamped from the client's archive *intent*; the retention deadline is derived (`archived_at + Pen::ARCHIVE_RETENTION`), never stored, so there is one calculation in one place. Accepted leak: "this pen was archived at T"; nil for in-use pens. Added 2026-08-04. |
 | Pen registry: `product_id`, normalized batch, expiry month | `pen_registrations` | Targeted recall push + product usage stats (below). **Not linked to accounts.** |
 | Push subscription (endpoint, keys) | attached to registry rows | Recall delivery. |
 | Recall list | `recalls` (public) | It's public information. |
@@ -73,7 +73,8 @@ Client-generated **ICS file** (download/share — not a hosted subscription URL,
 
 ## Policies
 
-- **Archived pens**: a finished/expired pen can be archived rather than trashed — it keeps its dose history and batch number and drops out of the dose UI. Retention is 2 years from archiving, enforced server-side by `PenPurgeJob` against `pens.purge_after` (trashing is still immediate and total). **[decided 2026-08-04]**
+- **Archived pens**: a finished/expired pen can be archived rather than trashed — it keeps its dose history and batch number, drops out of the pen switcher, and is reachable from the account panel. Retention is 2 years from archiving, enforced server-side by `PenPurgeJob` against `pens.archived_at` (trashing is still immediate and total). Re-saving an archived pen must not restart the clock. **[decided 2026-08-04]**
+- **Time handling**: everything crosses the wire as UTC ISO8601 and the client only *formats* it for the viewer's zone. Dates and deadlines are calculated server-side with ActiveSupport, never in the browser — browser date arithmetic silently shifted a retention deadline by a day for a non-UTC user (AGENTS.md §9.6). The exception is a user-entered dose date, which is a local calendar date living inside the encrypted blob. **[decided 2026-08-04]**
 - **Idle deletion**: accounts untouched for 2 years are deleted (defined by `accounts.updated_at`). With no plaintext contact channel there is no pre-deletion warning email — a push warning at ~23 months is possible where a subscription exists. Document the policy publicly. **[decided]**
 - **Account deletion**: one panel, full cascade (account, credentials, pens, registrations via client-held IDs, escrows), one confirmation step. State the backup-retention window (suggest 30 days) after which deleted data is gone from backups too. **[open: retention window]**
 - **Backups**: encrypted at rest; same access controls as prod.
