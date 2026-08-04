@@ -17,7 +17,11 @@ function escapeText(s) {
 export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel) {
   if (remainingDoses < 1) return null;
 
-  const last = pen.history.length ? pen.history[pen.history.length - 1].date : null;
+  // Doses can be backdated, so the last ENTERED dose isn't the latest one.
+  // Anchoring on entry order put the whole series (and the refill event) a
+  // cycle early — sort before taking the most recent date.
+  const dates = pen.history.map(h => h.date).sort();
+  const last = dates.length ? dates[dates.length - 1] : null;
   const start = last ? new Date(last + "T00:00") : new Date();
   if (last) start.setDate(start.getDate() + Math.round(pen.freqDays));
 

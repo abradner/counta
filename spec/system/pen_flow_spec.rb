@@ -91,6 +91,8 @@ RSpec.describe "Pen setup and dosing", type: :system do
   it "keeps a custom pen's dose intact across a reload" do
     select "Something else…", from: "f-product"
     fill_in "f-name", with: "Ozempic 1 mg"
+    # An unlisted pen defaults to making no claim about its counter window.
+    expect(find("#f-counter-style").value).to eq("progress")
     fill_in "f-cap-units", with: "8"
     fill_in "f-cap-unitname", with: "mg"
     fill_in "f-clicks", with: "300"

@@ -16,7 +16,9 @@ const PISTON_TRAVEL = 160;
 // Fallback preset for "Something else…" pens (no product row).
 const CUSTOM_PRESET = {
   id: "custom", name: "", strength: "", unit: "mg", decimals: 2,
-  counter_style: "numeric", capacity_units: null, capacity_ml: null,
+  // Unused for custom pens — the counter style is asked at setup — but keep
+  // the no-claim value here so any missed path fails safe.
+  counter_style: "progress", capacity_units: null, capacity_ml: null,
   total_clicks: null, max_dial_clicks: Infinity, common_doses: [], default_freq_days: 7,
   theme: { "--c-body": "#8B9DC3", "--c-body-dark": "#6B7FA8", "--c-accent": "#DCE3F0",
            "--c-label": "#FFFFFF", "--c-text": "#1B3A6B", "--c-liquid": "#EAF4FB",
@@ -184,7 +186,10 @@ async function savePenForm() {
     name: key === "custom" ? ($("f-name").value || "My pen") : p.name,
     strength: key === "custom" ? "" : p.strength,
     unit: unitName, decimals: p.decimals,
-    counterStyle: p.counter_style,
+    // Listed products carry a verified counter_style; for an unlisted pen only
+    // the user can say, so it's asked at setup (defaulting to the wording that
+    // makes no claim about the window).
+    counterStyle: key === "custom" ? $("f-counter-style").value : p.counter_style,
     capUnits, capMl, totalClicks,
     batch: $("f-batch").value.trim(), expiry: $("f-expiry").value,
     freqDays: parseFloat($("f-freq").value),
@@ -687,7 +692,10 @@ function wire() {
     const d = pen();
     buildProductSelect();
     fillSetupForm(d.productKey);
-    if (d.productKey === "custom") $("f-name").value = d.name;
+    if (d.productKey === "custom") {
+      $("f-name").value = d.name;
+      $("f-counter-style").value = d.counterStyle || "progress";
+    }
     // fillSetupForm resets capacity to the product preset, so a pen set up
     // with a custom capacity must have it restored — otherwise editing (say)
     // the expiry silently rewrites capacity back to the preset and every

@@ -1,8 +1,15 @@
 module Api
   # Blobs in, blobs out. Every query goes through current_account.pens —
   # never Pen.find — so one account's pens are structurally invisible to
-  # another (AGENTS.md §4.1, R-001). Sync is last-write-wins: a PUT simply
-  # overwrites; updated_at is the tiebreaker the client compares against.
+  # another (AGENTS.md §4.1, R-001).
+  #
+  # Sync is last-write-wins with NO conflict detection: a PUT overwrites
+  # unconditionally, and nothing compares versions. `updated_at` is returned
+  # for the client's information only — it is not sent back on write and not
+  # checked here. Because the blob is a pen's entire dose log, a stale client
+  # overwrites the whole history, and the server cannot help because it holds
+  # no keys. Tracked in issue #2; do not describe this as protected until
+  # optimistic concurrency actually lands.
   class PensController < ApplicationController
     before_action :require_account!
 

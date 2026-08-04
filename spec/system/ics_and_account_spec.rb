@@ -54,6 +54,35 @@ RSpec.describe "ICS export and account panel", type: :system do
     expect(ics).not_to include("counter set to")
   end
 
+  # Regression: the export anchored on the last-ENTERED dose, so logging a
+  # backdated dose after a recent one started the whole reminder series (and
+  # the refill event) a cycle early.
+  it "anchors the schedule on the latest dose date, not the last one entered" do
+    log_dose # today
+
+    # "Today" must come from the BROWSER: dose dates are local calendar dates,
+    # while Ruby's Date.current is UTC, and on a UTC+10 box just after midnight
+    # those are different days (AGENTS.md §9.6 in spec form).
+    today = Date.parse(page.evaluate_script(
+      "(d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)(new Date())"
+    ))
+    backdated = (today - 21).iso8601
+    page.execute_script(
+      "document.getElementById('f-date').value = arguments[0];" \
+      "document.getElementById('f-date').dispatchEvent(new Event('change', { bubbles: true }))",
+      backdated
+    )
+    click_button "Dose now"
+    within("#confirm-dlg") { click_button "Yes, I dosed" }
+    expect(page).to have_css("#history li", minimum: 2, wait: 10)
+
+    ics = page.evaluate_script("window.countaTest.icsPreview()")
+    # Weekly pen dosed today: the series starts a week from TODAY, not a week
+    # after the backdated entry (which is already in the past).
+    expect(ics).to include("DTSTART;VALUE=DATE:#{(today + 7).strftime("%Y%m%d")}")
+    expect(ics).not_to include("DTSTART;VALUE=DATE:#{(today - 14).strftime("%Y%m%d")}")
+  end
+
   it "lists passkeys and deletes the account with full cascade" do
     log_dose
     account = Account.sole

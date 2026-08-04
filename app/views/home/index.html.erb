@@ -81,6 +81,16 @@
         <div id="custom-name-wrap" hidden>
           <label for="f-name">Product name</label>
           <input type="text" id="f-name" autocomplete="off" placeholder="e.g. Ozempic 1 mg">
+          <%# counta can't know an unlisted pen's counter, and guessing "shows
+              numbers" would have it tell people to dial to a number their pen
+              may never display. Ask; default to the answer that claims least. %>
+          <label for="f-counter-style">Your pen’s dose counter</label>
+          <select id="f-counter-style">
+            <option value="progress">Doesn’t show a readable number</option>
+            <option value="numeric">Shows the dose as a number</option>
+          </select>
+          <p class="hint">If you’re not sure, leave this as-is — counta will just
+            count clicks and won’t tell you to dial to a number.</p>
         </div>
         <label for="f-capacity">Pen capacity</label>
         <select id="f-capacity"></select>

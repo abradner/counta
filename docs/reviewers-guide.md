@@ -145,10 +145,13 @@ Stopping points are deliberate and tracked as issues rather than hidden:
   server it defends against, so an attacker who can change the served
   JavaScript gets keys at the next unlock. No client-side design fixes this;
   the threat model now says so instead of implying otherwise.
-- **CSP is the backstop** for the fact that one XSS equals total compromise
-  here. `connect-src 'self'` is the load-bearing directive. Note the nonce is
-  per-request random — a session-derived nonce is empty before a session
-  exists and silently blocks all JS.
+- **CSP raises the bar for getting script to run; it is not containment once
+  it does.** `connect-src 'self'` blocks the obvious `fetch()` exfiltration
+  path but does not stop top-level navigation carrying data in a URL, so an
+  executing script can still get plaintext out. One XSS is still total
+  compromise here — the CSP is defence in depth on top of escaping, not a
+  boundary to lean on. (The nonce is per-request random: a session-derived
+  nonce is empty before a session exists and silently blocks all JS.)
 - **`development` is publicly reachable** at counta.click for pre-deploy
   testing, which it isn't built for (R-005). web-console is denied there;
   the real answer is running production mode.

