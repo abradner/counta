@@ -22,13 +22,36 @@ RSpec.describe "ICS export and account panel", type: :system do
     expect(ics).to include("UID:counta-#{pen_id}-refill@counta.click")
     # 288 clicks left at 8 clicks/dose = 36 doses, weekly.
     expect(ics).to include("RRULE:FREQ=DAILY;INTERVAL=7;COUNT=36")
-    # Descriptive copy, and the disclaimer travels with the export.
-    expect(ics).to include("Dose day — Wegovy: counter set to 8 clicks")
+    # Wegovy is a progress-style pen: the calendar entry must not imply the
+    # window shows a number (docs/design-notes.md).
+    expect(ics).to include("Dose day — Wegovy: dial 8 clicks (≈ 0.26 mg)")
+    expect(ics).to include("the window shows no number")
+    expect(ics).not_to include("counter will show")
     expect(ics).to include("isn't medical advice")
     expect(ics).to include("Buy more Wegovy")
 
     # The schedule never touched the server: nothing about it is queryable.
     expect(Pen.sole.blob).not_to include("RRULE")
+  end
+
+  # Regression for the most dangerous defect found in review: on a Tresiba
+  # U200 one click delivers 2 U, so a calendar entry reading "counter set to
+  # 5 clicks" invites the user to dial until the window shows 5 — half their
+  # basal insulin. The exported text is read months later without the app
+  # open, so it has to be unambiguous on its own.
+  it "tells numeric-counter pens what the window will show, not the click count" do
+    click_button "Edit this pen’s data"
+    select "Tresiba 200 U/mL (3 mL · 600 U)", from: "f-product"
+    save_pen
+
+    expect(find("#readout-big").text).to eq("5 clicks")
+    expect(find("#readout-sub").text).to eq("counter will show 10")
+
+    ics = page.evaluate_script("window.countaTest.icsPreview()")
+    expect(ics).to include("Dose day — Tresiba: dial 5 clicks — the counter will show 10 U")
+    # The click count must never be presented as the number on the window.
+    expect(ics).not_to include("counter will show 5")
+    expect(ics).not_to include("counter set to")
   end
 
   it "lists passkeys and deletes the account with full cascade" do

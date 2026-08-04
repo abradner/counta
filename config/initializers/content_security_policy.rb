@@ -1,29 +1,33 @@
 # Be sure to restart your server when you modify this file.
 
-# Define an application-wide content security policy.
-# See the Securing Rails Applications Guide for more information:
-# https://guides.rubyonrails.org/security.html#content-security-policy-header
+# counta's whole guarantee is that key material stays in this browser tab, so
+# the cost of any script injection is total: the DEK is in module scope and
+# every decrypted blob is reachable from it. A strict CSP is the backstop for
+# that, on top of escaping every interpolated value (see `esc` in app.js).
+#
+# connect-src :self is the load-bearing directive — even if script did run, it
+# has nowhere to send the plaintext. There are no third-party origins here by
+# design: no analytics, no CDNs, no fonts (docs/data-privacy.md).
+Rails.application.configure do
+  config.content_security_policy do |policy|
+    policy.default_src :none
+    policy.base_uri    :self
+    policy.form_action :none            # nothing here submits a form
+    policy.frame_ancestors :none        # clickjacking
+    policy.connect_src :self            # exfiltration boundary
+    policy.script_src  :self
+    policy.style_src   :self
+    policy.img_src     :self, :data     # :data for the generated kit QR/downloads
+    policy.font_src    :self
+    policy.object_src  :none
+  end
 
-# Rails.application.configure do
-#   config.content_security_policy do |policy|
-#     policy.default_src :self, :https
-#     policy.font_src    :self, :https, :data
-#     policy.img_src     :self, :https, :data
-#     policy.object_src  :none
-#     policy.script_src  :self, :https
-#     policy.style_src   :self, :https
-#     # Specify URI for violation reports
-#     # policy.report_uri "/csp-violation-report-endpoint"
-#   end
-#
-#   # Generate session nonces for permitted importmap, inline scripts, and inline styles.
-#   config.content_security_policy_nonce_generator = ->(request) { request.session.id.to_s }
-#   config.content_security_policy_nonce_directives = %w(script-src style-src)
-#
-#   # Automatically add `nonce` to `javascript_tag`, `javascript_include_tag`, and `stylesheet_link_tag`
-#   # if the corresponding directives are specified in `content_security_policy_nonce_directives`.
-#   # config.content_security_policy_nonce_auto = true
-#
-#   # Report violations without enforcing the policy.
-#   # config.content_security_policy_report_only = true
-# end
+  # Importmap emits an inline <script type="importmap">, so it needs a nonce
+  # rather than 'unsafe-inline' (which would defeat the point of script-src).
+  #
+  # Per-request random, NOT session.id: visitors have no session until they
+  # sign up, so a session-derived nonce is the empty string on first load and
+  # the browser rejects `'nonce-'`, silently blocking all JS.
+  config.content_security_policy_nonce_generator = ->(_request) { SecureRandom.base64(16) }
+  config.content_security_policy_nonce_directives = %w[ script-src ]
+end

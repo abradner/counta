@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-labelledby="favicon-title">
+  <title id="favicon-title">counta.click</title>
+  <!--
+    counta-favicon.svg — the dose counter window of a FlexTouch-style pen.
+
+    Why this mark: the counter window (rounded aperture + the pointer notch
+    that aligns with the dial) is the one part of a measured-dose pen that is
+    instantly recognisable, and it's literally what the app does — show you a
+    number for what you dialled. A whole-pen silhouette turns to mush at 16px;
+    an aperture with a numeral in it stays legible.
+
+    Authored on a 64px grid with 16px in mind:
+      - strokes are >= 3px so nothing disappears when scaled to a quarter size
+      - the numeral is a single glyph, weight 700, optically centred
+      - no gradients, no sub-pixel detail, no text smaller than the numeral
+
+    Colours are counta's: --brand navy #1B3A6B, the wordmark's orange #E65300
+    for the pointer, and the pen's body off-white for the aperture.
+
+    Rendering PNGs (favicon-16/32/180/192/512):
+      rsvg-convert -w 32 -h 32 assets/counta-favicon.svg -o public/icon-32.png
+    or any SVG rasteriser. The 0/1 numeral swap is documented below.
+  -->
+  <defs>
+    <clipPath id="win-clip">
+      <rect x="12" y="20" width="40" height="30" rx="7"/>
+    </clipPath>
+  </defs>
+
+  <!-- pen body panel: the surface the window sits in -->
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#1B3A6B"/>
+
+  <!-- the aperture -->
+  <rect x="12" y="20" width="40" height="30" rx="7" fill="#F4F6F9"/>
+
+  <!-- dialled value. Swap this glyph to taste; keep it to ONE character so it
+       stays legible at 16px (a two-digit number crowds the aperture). -->
+  <g clip-path="url(#win-clip)">
+    <text id="counter-value" x="32" y="45" text-anchor="middle"
+          font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
+          font-size="30" font-weight="700" fill="#1B3A6B">8</text>
+  </g>
+
+  <!-- pointer notch: the alignment mark the dialled number lines up against,
+       pointing down at the window as it does on the pen. Orange ties it to
+       the .click in the wordmark. -->
+  <path d="M 25 9 L 39 9 L 32 17 Z" fill="#E65300"/>
+</svg>

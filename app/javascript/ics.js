@@ -33,7 +33,18 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel)
 
   // One recurring event covers every remaining dose; COUNT shrinks on
   // re-export as doses are logged, and the fixed UID replaces the old series.
-  const summary = escapeText(`Dose day — ${pen.name}: counter set to ${doseClicks} clicks (≈ ${doseUnitsLabel})`);
+  //
+  // The wording must follow counter_style exactly as the in-app readout does
+  // (docs/design-notes.md). Saying "counter set to N clicks" is dangerous on a
+  // numeric pen where clicks != units: on a Tresiba U200 one click is 2 U, so
+  // a 12 U dose is 6 clicks, and a user dialling until the window reads 6
+  // would take half their dose. This text is read months later, in a calendar,
+  // without the app open — it has to stand alone.
+  const summary = escapeText(
+    pen.counterStyle === "progress"
+      ? `Dose day — ${pen.name}: dial ${doseClicks} clicks (≈ ${doseUnitsLabel}) — the window shows no number, your click count is the dose`
+      : `Dose day — ${pen.name}: dial ${doseClicks} clicks — the counter will show ${doseUnitsLabel}`
+  );
   lines.push("BEGIN:VEVENT", `UID:counta-${penId}-dose@counta.click`, `DTSTAMP:${stamp}`);
   if (wholeDays) {
     lines.push(

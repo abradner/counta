@@ -62,6 +62,15 @@ Rails.application.configure do
   # forwards to this host on port 25425 as plain http.
   config.hosts << "counta.click"
 
+  # That makes this environment PUBLICLY REACHABLE, which development mode is
+  # not built for: web-console renders an interactive Ruby REPL on exception
+  # pages, and it authorises by remote IP — which, behind a same-host proxy,
+  # is 127.0.0.1 for every visitor on the internet. That is remote code
+  # execution on the app server, and on an end-to-end-encrypted app it means
+  # serving hostile JS to every user. Deny it outright; a proper deployment
+  # should run RAILS_ENV=production (see docs/repo-map.md R-005).
+  config.web_console.permissions = "127.0.0.255/32" if defined?(WebConsole)
+
   # WebAuthn is origin-bound: ceremonies signed for https://counta.click only
   # verify against that origin/RP ID (test env overrides with localhost).
   config.x.webauthn_origin = "https://counta.click"

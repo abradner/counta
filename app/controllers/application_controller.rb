@@ -31,4 +31,15 @@ class ApplicationController < ActionController::Base
   def fresh_csrf
     { csrf_token: form_authenticity_token }
   end
+
+  # WebAuthn payloads are attacker-supplied CBOR/base64 parsed on public
+  # endpoints; a malformed one raises from deep inside the parser rather than
+  # as a WebAuthn::Error. Treat those as bad input (422), not as a bug (500).
+  MALFORMED_CREDENTIAL_ERRORS = [
+    EOFError, KeyError, NoMethodError, TypeError, ArgumentError, RangeError
+  ].freeze
+
+  def malformed_credential?(error)
+    MALFORMED_CREDENTIAL_ERRORS.any? { |klass| error.is_a?(klass) }
+  end
 end

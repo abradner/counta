@@ -8,6 +8,8 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="webauthn-rp-id" content="<%= Rails.configuration.x.webauthn_rp_id %>">
     <meta name="signed-in" content="<%= current_account.present? %>">
+    <%# Gates window.countaTest, the specs' encrypt/decrypt probe. Test env only. %>
+    <% if Rails.env.test? %><meta name="test-hooks" content="true"><% end %>
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 

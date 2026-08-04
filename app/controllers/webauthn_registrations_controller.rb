@@ -42,7 +42,8 @@ class WebauthnRegistrationsController < ApplicationController
     return head :unprocessable_entity unless challenge
 
     webauthn_credential = WebAuthn::Credential.from_create(params.require(:credential).to_unsafe_h)
-    webauthn_credential.verify(challenge)
+    # See the sessions controller: UV is only enforced when passed explicitly.
+    webauthn_credential.verify(challenge, user_verification: true)
 
     if current_account
       add_credential(current_account, webauthn_credential)
@@ -50,8 +51,16 @@ class WebauthnRegistrationsController < ApplicationController
       signup(webauthn_credential)
     end
     render json: { account_id: current_account.id, **fresh_csrf }
-  rescue WebAuthn::Error, ActiveRecord::RecordInvalid => e
-    render json: { error: e.message }, status: :unprocessable_entity
+  rescue WebAuthn::Error, ActiveRecord::RecordInvalid, ActionController::ParameterMissing => e
+    Rails.logger.info("webauthn registration rejected: #{e.class}")
+    render json: { error: "Registration could not be verified." }, status: :unprocessable_entity
+  rescue StandardError => e
+    # from_create parses attacker-supplied CBOR/base64 on an unauthenticated
+    # endpoint; malformed input raises EOFError/KeyError/NoMethodError rather
+    # than WebAuthn::Error, which would otherwise 500 with a backtrace.
+    raise unless malformed_credential?(e)
+    Rails.logger.info("webauthn registration malformed: #{e.class}")
+    render json: { error: "Registration could not be verified." }, status: :unprocessable_entity
   end
 
   private

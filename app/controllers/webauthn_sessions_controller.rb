@@ -17,10 +17,15 @@ class WebauthnSessionsController < ApplicationController
     stored = WebauthnCredential.find_by(external_id: webauthn_credential.id)
     return head :unauthorized unless stored
 
+    # user_verification: true is required to actually CHECK the UV flag —
+    # webauthn-ruby only verifies it when asked, so requesting
+    # userVerification: "required" in the options proves nothing on its own
+    # (the client is attacker-controlled). A passkey is the sole factor here.
     webauthn_credential.verify(
       challenge,
       public_key: stored.public_key,
-      sign_count: stored.sign_count
+      sign_count: stored.sign_count,
+      user_verification: true
     )
     stored.update!(sign_count: webauthn_credential.sign_count)
 
@@ -28,8 +33,13 @@ class WebauthnSessionsController < ApplicationController
     session[:account_id] = stored.account_id
     stored.account.touch
     render json: { account_id: stored.account_id, wrapped_dek: stored.wrapped_dek, **fresh_csrf }
-  rescue WebAuthn::Error => e
-    render json: { error: e.message }, status: :unauthorized
+  rescue WebAuthn::Error, ActionController::ParameterMissing => e
+    Rails.logger.info("webauthn authentication rejected: #{e.class}")
+    render json: { error: "Sign-in could not be verified." }, status: :unauthorized
+  rescue StandardError => e
+    raise unless malformed_credential?(e)
+    Rails.logger.info("webauthn authentication malformed: #{e.class}")
+    render json: { error: "Sign-in could not be verified." }, status: :unauthorized
   end
 
   def destroy

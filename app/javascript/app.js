@@ -40,7 +40,12 @@ const usedClicks = () => usedClicksOf(pen());
 const remainingClicks = () => remainingClicksOf(pen());
 const remainingDoses = () => doseClicks > 0 ? Math.floor(remainingClicks() / doseClicks) : 0;
 const unitsPerClick = () => pen().capUnits / pen().totalClicks;
-const fmtU = v => pen().decimals ? (Math.round(v * 100) / 100).toFixed(2).replace(/0$/, "").replace(/\.$/, "") : Math.round(v).toString();
+// Trim trailing zeros, but only after the decimal point: "10.00" -> "10",
+// "1.70" -> "1.7", "0.26" -> "0.26". The original single-zero strip left
+// whole numbers reading "10.0".
+const fmtU = v => pen().decimals
+  ? (Math.round(v * 100) / 100).toFixed(2).replace(/\.?0+$/, "")
+  : Math.round(v).toString();
 const clicksFor = u => Math.round(u / unitsPerClick());
 const unitsForClicks = c => c * unitsPerClick();
 // Local-calendar date. Never toISOString() — that converts to UTC and lands a
@@ -49,6 +54,12 @@ const isoDate = d =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const todayISO = () => isoDate(new Date());
 const announce = msg => { $("sr-live").textContent = msg; };
+// Escape anything interpolated into innerHTML. Product fields (unit, name,
+// theme) come from the server's product table, so a write-capable DB attacker
+// could otherwise inject script into an unlocked session and read the DEK
+// straight out of this module's scope.
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 /* ============ screens ============ */
 const SCREENS = [ "landing-screen", "unlock-screen", "recovery-screen", "app-screen", "account-screen" ];
@@ -177,20 +188,31 @@ async function savePenForm() {
     capUnits, capMl, totalClicks,
     batch: $("f-batch").value.trim(), expiry: $("f-expiry").value,
     freqDays: parseFloat($("f-freq").value),
-    maxDialClicks: p.max_dial_clicks === null ? Infinity : p.max_dial_clicks,
+    // Never Infinity here: the blob is JSON, and JSON.stringify(Infinity) is
+    // "null", which read back as 0 through Math.min and silently clamped every
+    // dose to 1 click. null means "no dial limit known" — see clampDose.
+    maxDialClicks: p.max_dial_clicks ?? null,
     common: p.common_doses, theme: p.theme,
     history: editingPen ? editingPen.data.history : [],
     registrationIds: editingPen ? editingPen.data.registrationIds : []
   };
 
-  if (editingPen) {
-    editingPen.data = data;
-    activePen = editingPen;
-  } else {
-    activePen = { id: null, data };
-    pens.push(activePen);
+  // Don't mutate local state until the server has it: a failed save used to
+  // leave the UI (and the switcher) showing a pen the server never received.
+  const target = editingPen ?? { id: null, data: null };
+  const previousData = target.data;
+  target.data = data;
+  const isNew = !editingPen;
+  if (isNew) pens.push(target);
+  try {
+    await persistPen(target);
+  } catch (e) {
+    if (isNew) pens = pens.filter(p => p !== target);
+    else target.data = previousData;
+    alert("Couldn’t save this pen: " + e.message);
+    return;
   }
-  await persistPen(activePen);
+  activePen = target;
   editingPen = null;
   enterDoseMode();
   announce("Pen saved. Dose screen ready.");
@@ -225,9 +247,23 @@ function buildSwitcher() {
   sel.hidden = pens.length === 0;
 }
 
+// Calendar-date helpers. `new Date("2026-08-31")` parses as UTC midnight while
+// `new Date(y, m, d)` is LOCAL midnight — mixing the two made a pen read as
+// expired a day early anywhere east of UTC. Every comparison below is
+// local-midnight to local-midnight.
+const localMidnight = iso =>
+  new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) || 1);
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+// Dose entries are appended in the order they're logged, which isn't date
+// order once anything is backdated. Anything that means "most recent dose"
+// must sort first.
+const byDate = history => [ ...history ].sort((a, b) => a.date.localeCompare(b.date));
+// Last day of the pen's expiry month, local midnight.
+const expiryEnd = d => new Date(+d.expiry.slice(0, 4), +d.expiry.slice(5, 7), 0);
+
 function isExpired(d) {
   if (!d.expiry) return false;
-  return new Date(+d.expiry.slice(0, 4), +d.expiry.slice(5, 7), 0) < new Date(todayISO());
+  return expiryEnd(d) < startOfToday();
 }
 
 // Both dates come from the server as UTC ISO8601; the browser's only job is
@@ -338,9 +374,15 @@ function buildChips() {
   });
 }
 
+// The dial max is whatever the pen physically allows, further limited by what
+// is actually left in it. `maxDialClicks` is null when unknown (custom pens).
+// An empty pen clamps to 1 and blocks recording entirely (see renderDose) —
+// the prototype fell back to the full dial max here, which let a user record a
+// dose the pen could not have delivered.
 function clampDose() {
-  const max = Math.min(pen().maxDialClicks, remainingClicks() || pen().maxDialClicks);
-  doseClicks = Math.max(1, Math.min(doseClicks, max === 0 ? 1 : max));
+  const dialMax = pen().maxDialClicks ?? Infinity;
+  const max = Math.max(1, Math.min(dialMax, remainingClicks() || dialMax));
+  doseClicks = Math.max(1, Math.min(doseClicks, max));
 }
 
 function renderDose() {
@@ -363,9 +405,13 @@ function renderDose() {
     : `counter will show ${fmtU(u)}`;
   [ ...$("chips").children ].forEach((b, i) =>
     b.setAttribute("aria-pressed", clicksFor(d.common[i]) === doseClicks));
+  // An empty pen can't deliver a dose, so don't offer to record one.
+  const empty = remainingClicks() === 0;
+  $("dose-now").disabled = empty;
+  $("dose-now").textContent = empty ? "Pen is empty" : "Dose now";
   // A finished or expired pen suggests archiving rather than trashing —
   // archiving keeps its history and batch number.
-  $("archive-pen").hidden = !(remainingClicks() === 0 || isExpired(d));
+  $("archive-pen").hidden = !(empty || isExpired(d));
   renderStatsWarnings();
   paintPen();
 }
@@ -376,13 +422,13 @@ function renderStatsWarnings() {
   const rd = remainingDoses();
   const ml = d.capMl ? ` · ${(d.capMl * rc / d.totalClicks).toFixed(2)} mL` : "";
   $("stats").innerHTML =
-    `<div class="stat"><div class="v">${fmtU(ru)}</div><div class="k">${d.unit} left${ml ? "" : ""}</div></div>` +
+    `<div class="stat"><div class="v">${esc(fmtU(ru))}</div><div class="k">${esc(d.unit)} left${esc(ml)}</div></div>` +
     `<div class="stat"><div class="v">${rd}</div><div class="k">doses left</div></div>` +
     `<div class="stat"><div class="v">${rc}</div><div class="k">clicks left</div></div>`;
   const w = [];
-  const today = new Date(todayISO());
+  const today = startOfToday();
   if (d.expiry) {
-    const expEnd = new Date(+d.expiry.slice(0, 4), +d.expiry.slice(5, 7), 0); // last day of expiry month
+    const expEnd = expiryEnd(d);
     if (expEnd < today) {
       w.push([ "red", `This pen expired ${d.expiry.slice(5, 7)}/${d.expiry.slice(0, 4)}.` ]);
     } else if (rd > 0) {
@@ -397,7 +443,7 @@ function renderStatsWarnings() {
   if (rc === 0) w.push([ "red", "This pen is empty." ]);
   else if (rd <= 1) w.push([ "amber", rd === 1 ? "Running out: last full dose in this pen." : "Not enough left for a full dose." ]);
   $("warnings").innerHTML = w.map(([ c, t ]) =>
-    `<div class="warn ${c}"><span aria-hidden="true">${c === "red" ? "⛔" : "⚠️"}</span><span>${t}</span></div>`).join("");
+    `<div class="warn ${c}"><span aria-hidden="true">${c === "red" ? "⛔" : "⚠️"}</span><span>${esc(t)}</span></div>`).join("");
 }
 
 function renderHistory() {
@@ -407,9 +453,14 @@ function renderHistory() {
     ul.innerHTML = '<li class="empty">No doses yet</li>';
     return;
   }
-  const short = iso => new Date(iso + "T00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  ul.innerHTML = h.slice(-5).reverse().map(e =>
-    `<li><span>${short(e.date)}</span><span><strong>${e.clicks} clicks</strong> <span class="mgv">≈ ${fmtU(e.units)} ${pen().unit}</span></span></li>`).join("");
+  const short = iso => localMidnight(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  // Doses can be backdated, so history is in entry order, not date order —
+  // sort before taking the most recent five.
+  ul.innerHTML = byDate(h).slice(-5).reverse().map(e =>
+    // Units are derived from clicks at render time: clicks are canonical, and
+    // a stored figure would go stale if the pen's capacity is ever corrected.
+    `<li><span>${esc(short(e.date))}</span><span><strong>${e.clicks} clicks</strong> ` +
+    `<span class="mgv">≈ ${esc(fmtU(unitsForClicks(e.clicks)))} ${esc(pen().unit)}</span></span></li>`).join("");
 }
 
 /* ============ first-run / auth flows ============ */
@@ -630,6 +681,20 @@ function wire() {
     buildProductSelect();
     fillSetupForm(d.productKey);
     if (d.productKey === "custom") $("f-name").value = d.name;
+    // fillSetupForm resets capacity to the product preset, so a pen set up
+    // with a custom capacity must have it restored — otherwise editing (say)
+    // the expiry silently rewrites capacity back to the preset and every
+    // future clicks-to-mg conversion is wrong on a pen that holds something
+    // else entirely.
+    const preset = productByKey(d.productKey);
+    const usesPreset = preset.capacity_units != null &&
+      Number(preset.capacity_units) === Number(d.capUnits);
+    $("f-capacity").value = usesPreset ? "0" : "custom";
+    $("custom-cap-wrap").hidden = usesPreset;
+    if (!usesPreset) {
+      $("f-cap-units").value = d.capUnits;
+      $("f-cap-unitname").value = d.unit;
+    }
     $("f-batch").value = d.batch;
     $("f-expiry").value = d.expiry;
     $("f-clicks").value = d.totalClicks;
@@ -737,8 +802,11 @@ function wire() {
 
 /* ============ test hooks ============ */
 // Used by the system specs to prove the envelope end-to-end without going
-// through the pen UI. Harmless in production: every call still requires an
-// unlocked session (dek in memory).
+// through the pen UI. Deliberately NOT shipped in production: it grants no
+// capability injected script couldn't reach through module scope anyway, but
+// it's a ready-made one-call plaintext oracle, and there's no reason to hand
+// that to an attacker to save them the trouble.
+if (document.querySelector('meta[name="test-hooks"]')?.content === "true") {
 window.countaTest = {
   unlocked: () => dek !== null,
   accountId: () => accountId,
@@ -760,6 +828,7 @@ window.countaTest = {
       `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`);
   }
 };
+}
 
 /* ============ boot ============ */
 wire();

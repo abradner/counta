@@ -10,5 +10,8 @@ Rails.application.config.filter_parameters += [
   # blob, wrapped_dek, batch, expiry/expiry_month, custom_product_name,
   # recovery proof, and WebAuthn ceremony payloads.
   :blob, :dek, :batch, :expiry, :product_name, :proof, :prf,
-  :attestation, :assertion, :credential
+  :attestation, :assertion, :credential,
+  # The stored verifier for the recovery path. Not invertible and not a bearer
+  # token, but it's account-recovery material and doesn't belong in a log.
+  :digest
 ]

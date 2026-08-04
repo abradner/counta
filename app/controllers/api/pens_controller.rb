@@ -38,14 +38,22 @@ module Api
 
     # The client sends the archive *intent*; the server stamps the time. Dates
     # and deadlines are never calculated client-side (AGENTS.md §9.6).
+    #
+    # Tri-state on purpose: `archived` absent means "don't touch the archive
+    # state". Treating absence as false would let any write that simply
+    # doesn't mention archiving silently un-archive a pen and drop it out of
+    # the retention sweep forever.
     def pen_params
-      archived = ActiveModel::Type::Boolean.new.cast(params[:archived])
-      archived_at = if archived
-        # Re-archiving an already-archived pen must not restart its retention
-        # clock, so an existing stamp wins.
-        current_account.pens.find_by(id: params[:id])&.archived_at || Time.current
-      end
-      { blob: params.require(:blob), archived_at: archived_at }
+      attrs = { blob: params.require(:blob) }
+      return attrs unless params.key?(:archived)
+
+      attrs[:archived_at] =
+        if ActiveModel::Type::Boolean.new.cast(params[:archived])
+          # Re-archiving an already-archived pen must not restart its
+          # retention clock, so an existing stamp wins.
+          current_account.pens.find_by(id: params[:id])&.archived_at || Time.current
+        end
+      attrs
     end
 
     # All times cross the wire as ISO8601 UTC; the client formats them in the
