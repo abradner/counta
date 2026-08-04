@@ -1,10 +1,137 @@
-/*
- * This is a manifest file that'll be compiled into application.css.
- *
- * With Propshaft, assets are served efficiently without preprocessing steps. You can still include
- * application-wide styles in this file, but keep in mind that CSS precedence will follow the standard
- * cascading order, meaning styles declared later in the document or manifest will override earlier ones,
- * depending on specificity.
- *
- * Consider organizing styles into separate files for maintainability.
- */
+/* counta.click — ported from assets/counta-prototype.html, plus the screens
+ * the prototype didn't have (landing, unlock, recovery, kit ceremony, account
+ * panel). px-sized like the prototype; the proper rem/container-query pass is
+ * still owed (docs/design-notes.md "Mobile sizing silver bullet"). */
+
+:root{
+  --ink:#1f2733; --ink-soft:#5a616c; --line:#dfe3e9; --bg:#f5f6f8; --card:#ffffff;
+  --brand:#1b3a6b; --brand-ink:#ffffff;
+  --amber-bg:#fff7e6; --amber-ink:#7a5200; --amber-line:#f0c36d;
+  --red-bg:#fdeeee; --red-ink:#8f1f1f; --red-line:#e9a0a0;
+  --ok-bg:#eef7f1; --ok-ink:#1e5c3a;
+  --radius:12px;
+}
+*{box-sizing:border-box}
+/* The hidden attribute only wins via the UA sheet's display:none, which any
+ * authored display rule (main{display:grid}, .warn{display:flex}) silently
+ * beats — this makes hidden actually mean hidden (AGENTS.md §9.3). */
+[hidden]{display:none !important}
+html,body{margin:0}
+body{font-family:system-ui,-apple-system,'Segoe UI',Helvetica,sans-serif;background:var(--bg);color:var(--ink);
+     font-size:16px;line-height:1.4;-webkit-text-size-adjust:100%}
+.app{max-width:760px;margin:0 auto;padding:12px 14px 40px}
+header.top{display:flex;align-items:center;gap:10px;padding:6px 2px 12px}
+.logo{font-weight:800;font-size:20px;color:var(--brand);letter-spacing:-0.02em}
+.logo span{color:#e65300}
+/* the switcher: a real <select> styled as the header chip */
+select.pen-chip{margin-left:auto;width:auto;max-width:55%;font-size:13px;font-weight:600;
+          background:var(--card);border:1px solid var(--line);
+          border-radius:999px;padding:6px 12px;color:var(--ink);
+          text-overflow:ellipsis}
+main{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
+@media (min-width:560px){ main{grid-template-columns:200px 1fr;gap:22px} }
+/* Small phones: real sizing pass instead of the prototype's zoom hack — zoom
+ * doesn't scale iOS-native form controls, which then overflow the card. */
+@media (max-width:480px){
+  .app{padding:8px 10px 32px}
+  main{grid-template-columns:88px 1fr;gap:10px}
+  .card{padding:12px}
+  .card h2{font-size:14px}
+  .chips button{font-size:14px;padding:6px 8px;min-height:42px}
+  .readout .big{font-size:26px}
+  .stat .v{font-size:15px}
+  .stat .k{font-size:10px}
+  header.top{padding:4px 0 10px}
+}
+.pen-col{position:sticky;top:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.pen-col svg{width:100%;max-width:170px;height:auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
+.pen-caption{font-size:12px;color:var(--ink-soft);text-align:center;min-height:2.4em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.card p{font-size:14px;margin:0 0 10px}
+label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin:12px 0 4px}
+label:first-of-type{margin-top:0}
+input[type=text],input[type=number],input[type=date],input[type=month],input[type=file],select,textarea{
+  width:100%;padding:10px;font-size:16px;border:1px solid #c9ced6;border-radius:8px;background:#fff;color:var(--ink);
+  font-family:inherit}
+/* iOS renders date/month inputs at native intrinsic width unless appearance
+ * is reset — without this they overflow their card on small screens. */
+input[type=date],input[type=month]{-webkit-appearance:none;appearance:none;min-width:0;min-height:46px}
+input:focus-visible,select:focus-visible,button:focus-visible,textarea:focus-visible,a:focus-visible{
+  outline:3px solid #7fb3ff;outline-offset:1px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row>div{min-width:0}
+@media (max-width:420px){ .row{grid-template-columns:1fr} }
+.hint{font-size:12px;color:var(--ink-soft);margin-top:4px}
+button{font:inherit;cursor:pointer}
+.btn{display:block;width:100%;min-height:48px;border:0;border-radius:10px;font-size:16px;font-weight:700;
+     background:var(--brand);color:var(--brand-ink);padding:12px;text-align:center;text-decoration:none}
+.btn.secondary{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}
+.btn.danger{background:#fff;color:var(--red-ink);border:1.5px solid var(--red-line)}
+.btn+.btn,.btn+a.btn,a.btn+.btn{margin-top:10px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.iconbtn{border:1px solid var(--line);background:#fff;border-radius:999px;width:28px;height:28px;font-weight:700;
+         color:var(--brand);flex:none}
+.account-btn{width:34px;height:34px}
+.linklike{border:0;background:none;padding:0;color:var(--brand);text-decoration:underline;font-size:inherit}
+/* segmented unit toggle */
+.seg{display:flex;border:1.5px solid var(--brand);border-radius:10px;overflow:hidden}
+.seg button{flex:1;min-height:44px;border:0;background:#fff;color:var(--brand);font-weight:700}
+.seg button[aria-pressed=true]{background:var(--brand);color:#fff}
+/* dose chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chips button{min-height:44px;flex:1 1 40%;padding:8px 10px;border-radius:10px;border:1.5px solid var(--line);
+              background:#fff;font-weight:700;font-size:15px;white-space:nowrap}
+.chips button[aria-pressed=true]{border-color:var(--brand);background:#eaf1fb;color:var(--brand)}
+/* stepper */
+.doserow{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;margin-top:10px}
+.doserow input{text-align:center;font-size:20px;font-weight:800}
+.doserow .step{min-height:48px;border-radius:10px;border:1.5px solid var(--line);background:#fff;font-size:22px;font-weight:800}
+.readout{margin-top:12px;padding:12px;border-radius:10px;background:#eaf1fb;color:var(--brand);text-align:center}
+.readout .big{font-size:30px;font-weight:800;letter-spacing:-.01em}
+.readout .sub{font-size:14px;font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+.stat{background:#f2f4f7;border-radius:10px;padding:10px 8px;text-align:center}
+.stat .v{font-size:17px;font-weight:800}
+.stat .k{font-size:11px;color:var(--ink-soft);font-weight:600}
+.warn{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:14px;font-weight:600;
+      display:flex;gap:8px;align-items:flex-start}
+.warn.amber{background:var(--amber-bg);color:var(--amber-ink);border:1px solid var(--amber-line)}
+.warn.red{background:var(--red-bg);color:var(--red-ink);border:1px solid var(--red-line)}
+.history{list-style:none;margin:8px 0 0;padding:0;font-size:14px}
+.history li{display:flex;justify-content:space-between;gap:8px;padding:8px 2px;border-top:1px solid var(--line);white-space:nowrap}
+.history li.empty{border:0;color:var(--ink-soft)}
+.history .mgv{color:var(--ink-soft)}
+dialog{border:0;border-radius:14px;padding:20px;max-width:380px;width:calc(100vw - 48px);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(15,23,42,.45)}
+dialog h3{margin:0 0 8px;font-size:17px}
+dialog p{margin:0 0 14px;font-size:15px}
+.confirm-big{font-size:34px;font-weight:800;color:var(--brand);text-align:center;margin:6px 0 2px}
+.confirm-sub{text-align:center;color:var(--ink-soft);font-weight:600;margin-bottom:14px}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+footer{margin-top:6px;font-size:12px;color:var(--ink-soft);text-align:center}
+code{font-family:ui-monospace,monospace;font-size:13px;background:#f2f4f7;border-radius:6px;padding:2px 6px;
+     overflow-wrap:anywhere}
+/* recovery kit ceremony */
+.kit-warning{background:var(--amber-bg);color:var(--amber-ink);border:1px solid var(--amber-line);
+             border-radius:10px;padding:10px 12px}
+.kit-account{display:block;margin-bottom:10px}
+.kit-words{columns:2;gap:18px;margin:10px 0;padding-left:26px;font-family:ui-monospace,monospace;font-size:14px}
+.kit-words li{margin-bottom:3px;break-inside:avoid}
+.kit-details{margin:12px 0}
+.kit-details summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--brand)}
+.kit-confirm{display:flex;gap:8px;align-items:flex-start;font-size:14px;font-weight:600;color:var(--ink);
+             margin:12px 0}
+.kit-confirm input{width:auto;margin-top:2px}
+/* ---- pen svg dynamic bits ---- */
+#piston-assembly{transition:transform .7s cubic-bezier(.3,.7,.3,1)}
+#label-front,#label-back{transform-box:fill-box;transform-origin:50% 50%;transition:transform .3s ease,opacity .3s ease}
+#label-back{transform:scaleX(.02);opacity:0}
+.show-back #label-front{transform:scaleX(.02);opacity:0}
+.show-back #label-back{transform:scaleX(1);opacity:1;transition-delay:.28s}
+#selector-ribs,#insulin-scale{transform-box:fill-box;transform-origin:50% 50%;transition:transform .55s ease}
+.show-back #selector-ribs{transform:translateX(4px)}
+.show-back #insulin-scale{transform:translateX(6px);opacity:.5}
+@media (prefers-reduced-motion:reduce){
+  #piston-assembly,#label-front,#label-back,#selector-ribs,#insulin-scale{transition:none}
+}
