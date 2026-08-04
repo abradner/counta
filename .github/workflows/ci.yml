@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  rspec:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:18
+        env:
+          POSTGRES_USER: counta
+          POSTGRES_PASSWORD: counta_dev
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U counta"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the Ruby pin from mise.toml so CI can't drift from dev machines.
+      - uses: jdx/mise-action@v2
+
+      - name: Install Chromium for system specs
+        run: sudo apt-get update && sudo apt-get install -y chromium-browser
+
+      - name: Bundle
+        run: |
+          mise exec -- bundle config set path vendor/bundle
+          mise exec -- bundle install --jobs 4
+
+      - name: Prepare database
+        run: mise exec -- bundle exec rails db:prepare
+        env:
+          RAILS_ENV: test
+
+      - name: RSpec
+        run: mise exec -- bundle exec rspec

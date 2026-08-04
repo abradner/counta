@@ -1,0 +1,29 @@
+# Dev/test connect to the docker-compose Postgres (`docker compose up -d db`),
+# published on host port 25432 (offset to avoid sibling-project collisions).
+# The credentials below are local-only and match docker-compose.yml — they are
+# not production config, which must come from the environment and fail fast
+# when missing (AGENTS.md "Configuration").
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  host: 127.0.0.1
+  port: 25432
+  username: counta
+  password: counta_dev
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: counta_development
+
+test:
+  <<: *default
+  database: counta_test
+
+production:
+  <<: *default
+  database: counta_production
+  username: counta
+# The ERB below runs whenever database.yml is parsed (every env), so the
+  # required-config fail-fast must be scoped to production or dev/test die too.
+  password: <%= ENV.fetch("COUNTA_DATABASE_PASSWORD") if Rails.env.production? %>
