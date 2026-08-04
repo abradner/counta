@@ -57,4 +57,13 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Pre-deploy testing: haproxy terminates TLS for https://counta.click and
+  # forwards to this host on port 25425 as plain http.
+  config.hosts << "counta.click"
+
+  # WebAuthn is origin-bound: ceremonies signed for https://counta.click only
+  # verify against that origin/RP ID (test env overrides with localhost).
+  config.x.webauthn_origin = "https://counta.click"
+  config.x.webauthn_rp_id = "counta.click"
 end

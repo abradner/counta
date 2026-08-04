@@ -25,3 +25,11 @@ tmp/
 /public/assets
 .bundle/
 vendor/bundle
+
+# Decrypts config/credentials.yml.enc — a real secret. This repo is public;
+# never commit it. (It was absent from this list until the Rails app was
+# scaffolded, and `rails new` writes the key straight into config/.)
+/config/master.key
+
+.byebug_history
+/app/assets/builds/*
