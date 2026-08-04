@@ -33,8 +33,10 @@ main{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
 /* Small phones: real sizing pass instead of the prototype's zoom hack — zoom
  * doesn't scale iOS-native form controls, which then overflow the card. */
 @media (max-width:480px){
-  .app{padding:8px 10px 32px}
-  main{grid-template-columns:88px 1fr;gap:10px}
+  .app{padding:8px 8px 32px}
+  /* The pen is the constant anchor (docs/design-notes.md) — don't starve its
+     column on small screens or it becomes the smallest thing on the page. */
+  main{grid-template-columns:124px 1fr;gap:10px}
   .card{padding:12px}
   .card h2{font-size:14px}
   .chips button{font-size:14px;padding:6px 8px;min-height:42px}
@@ -44,8 +46,7 @@ main{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
   header.top{padding:4px 0 10px}
 }
 .pen-col{position:sticky;top:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
-.pen-col svg{width:100%;max-width:170px;height:auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
-.pen-caption{font-size:12px;color:var(--ink-soft);text-align:center;min-height:2.4em}
+.pen-col svg{width:100%;max-width:190px;height:auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
 .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
 .card p{font-size:14px;margin:0 0 10px}

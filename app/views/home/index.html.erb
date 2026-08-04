@@ -65,7 +65,10 @@
   <main id="app-screen" hidden>
     <div class="pen-col">
       <%= render "pen_svg" %>
-      <div class="pen-caption" id="pen-caption">Front of pen</div>
+      <%# Visually redundant — the card next to it already says which mode
+          you're in — but flipping the pen IS the mode transition, so screen
+          reader users still get it announced. %>
+      <div class="visually-hidden" id="pen-caption" aria-live="polite">Front of pen</div>
     </div>
 
     <div class="panel-col">
