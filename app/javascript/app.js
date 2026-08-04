@@ -235,10 +235,25 @@ function isExpired(d) {
 const localDate = iso =>
   new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
-function archivedCopy(p) {
-  return `Archived ${localDate(p.archivedAt)}. Its dose history and batch number stay in your ` +
-    `encrypted data until ${localDate(p.purgeAfter)}, then counta.click deletes the record ` +
-    `automatically.`;
+// <time datetime> carries the machine-readable instant alongside the
+// human-readable local rendering — better semantics for assistive tech, and
+// it gives tests something to assert that doesn't shift with the viewer's
+// locale.
+function timeEl(iso) {
+  const el = document.createElement("time");
+  el.dateTime = iso;
+  el.textContent = localDate(iso);
+  return el;
+}
+
+function renderArchivedNote(p) {
+  const el = $("archived-note-text");
+  el.replaceChildren(
+    "Archived ", timeEl(p.archivedAt),
+    ". Its dose history and batch number stay in your encrypted data until ",
+    timeEl(p.purgeAfter),
+    ", then counta.click deletes the record automatically."
+  );
 }
 
 function enterDoseMode() {
@@ -258,7 +273,7 @@ function enterDoseMode() {
   $("trash-pen").hidden = !archived;
   $("archive-pen").hidden = true;
   if (archived) {
-    $("archived-note-text").textContent = archivedCopy(activePen);
+    renderArchivedNote(activePen);
     paintPen();
   } else {
     doseClicks = d.common.length ? clicksFor(d.common[0]) : Math.min(8, d.totalClicks);
@@ -494,7 +509,7 @@ function renderArchivedList() {
   archived.forEach(p => {
     const li = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `${p.data.name} · archived ${localDate(p.archivedAt)}`;
+    label.append(`${p.data.name} · archived `, timeEl(p.archivedAt));
     const open = document.createElement("button");
     open.className = "linklike";
     open.textContent = "Open";

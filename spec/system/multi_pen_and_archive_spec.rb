@@ -111,7 +111,14 @@ RSpec.describe "Multiple pens and archiving", type: :system do
     find("#account-btn").click
     within("#archived-list") { click_button "Open" }
 
-    expect(find("#archived-note")).to have_text("Archived 9 Mar 2025", wait: 10)
-    expect(find("#archived-note")).to have_text("until 9 Mar 2027")
+    # Assert the machine-readable instants, not the rendered text: the visible
+    # dates are formatted in the viewer's locale, so a US CI runner and an AU
+    # dev box legitimately render them differently (AGENTS.md §9.9).
+    expect(page).to have_css("#archived-note time", count: 2, wait: 10)
+    archived_at, purge_after = all("#archived-note time").map { |t| t[:datetime] }
+    expect(Time.iso8601(archived_at)).to eq(Time.utc(2025, 3, 9, 12, 0))
+    expect(Time.iso8601(purge_after)).to eq(Time.utc(2027, 3, 9, 12, 0))
+    # ...and that the human-readable rendering isn't empty or "Invalid Date".
+    expect(find("#archived-note").text).to match(/Archived .*2025.*until .*2027/)
   end
 end

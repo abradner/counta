@@ -319,6 +319,15 @@ test lives** (if one exists).
    invariant, revert the mechanism and watch it fail *before* trusting it; if the invariant isn't
    reachable from the UI, test it at the layer where it is (request spec, not system spec) →
    `spec/requests/pens_archive_spec.rb`.
+9. A system spec asserting `"Archived 9 Mar 2025"` passed locally and failed on CI, which renders
+   `"Mar 9, 2025"` → the app formats server-sent UTC instants in the *viewer's* locale (correct
+   for users), and the browser takes that locale from the environment → **don't assert on
+   locale-formatted text**; render `<time datetime="…">` and assert the machine-readable
+   attribute. Reproduce a locale-dependent failure locally with `LC_ALL=en_US.UTF-8` — that does
+   drive Intl, whereas Chromium's `--lang` flag does **not**. The first attempted fix pinned
+   `--lang` and "passed", which proved nothing: when fixing an environment-dependent test, first
+   confirm the lever you're pulling actually changes the output (`spec/support/system.rb`,
+   `spec/system/multi_pen_and_archive_spec.rb`).
 
 ## 10. Maintaining This Document
 

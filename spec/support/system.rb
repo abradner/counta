@@ -19,6 +19,10 @@ Capybara.register_driver(:cuprite) do |app|
     window_size: [ 1200, 900 ],
     timeout: 30,
     process_timeout: 30
+    # Note: don't try to pin the browser locale here to stabilise date
+    # assertions — Chromium's --lang doesn't drive Intl's default locale, so
+    # it silently does nothing. Assert on <time datetime> instead, which is
+    # locale-independent by construction (AGENTS.md §9.9).
   )
 end
 
