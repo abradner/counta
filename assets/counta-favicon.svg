@@ -15,8 +15,10 @@
       - the numeral is a single glyph, weight 700, optically centred
       - no gradients, no sub-pixel detail, no text smaller than the numeral
 
-    Colours are counta's: --brand navy #1B3A6B, the wordmark's orange #E65300
+    Colours are counta's brand navy #1B3A6B, the wordmark's orange #E65300
     for the pointer, and the pen's body off-white for the aperture.
+    (Note: no double hyphens anywhere in this comment — they are illegal
+    inside an XML comment and make the whole file invalid SVG.)
 
     Rendering PNGs (favicon-16/32/180/192/512):
       rsvg-convert -w 32 -h 32 assets/counta-favicon.svg -o public/icon-32.png
