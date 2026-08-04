@@ -11,7 +11,8 @@ The operator can **never read your personal information**. Everything identifyin
 | Scenario | What an attacker learns |
 |---|---|
 | DB dump (backup theft, SQLi, misconfigured replica) | Anonymous accounts (no email/name exist), activity timestamps, ciphertext blobs, the pen registry (product+batch ↔ push endpoint, **not** ↔ account), push endpoints |
-| Full app-server compromise | Same as above plus live traffic; still no DEKs (PRF outputs never leave the client) |
+| App-server compromise, read-only (traffic, memory, disk — attacker cannot change what's served) | Same as above plus live traffic; still no DEKs (PRF outputs never leave the client) |
+| App-server compromise where the attacker can **change the JavaScript served** | **Everything, for every user who unlocks afterwards.** The crypto is delivered by the same server it protects against, so hostile JS can exfiltrate the PRF output and DEK at unlock. This is inherent to web-delivered E2EE and is *not* mitigated by anything in this design — only by out-of-band integrity (signed/pinned bundles, a store-delivered app). Stated plainly because the row above is easy to misread as covering it. **[corrected 2026-08-05 after review]** |
 | Client/device compromise | Everything for that account — out of scope, as with any E2E app |
 | Operator (Alex) | Same as DB dump. This is the point. |
 
@@ -42,7 +43,9 @@ Why a blob, not a row per dose: row counts + timestamps would reconstruct dosing
 | Archived-pen marker | `pens.archived_at` (timestamp, nullable) | Server-side retention sweep (`PenPurgeJob`) for archived pens — a client-side prune can't run for a user who never returns, so the 2-year claim needs a server mechanism. Server-stamped from the client's archive *intent*; the retention deadline is derived (`archived_at + Pen::ARCHIVE_RETENTION`), never stored, so there is one calculation in one place. Accepted leak: "this pen was archived at T"; nil for in-use pens. Added 2026-08-04. |
 | Pen registry: `product_id`, normalized batch, expiry month | `pen_registrations` | Targeted recall push + product usage stats (below). **Not linked to accounts.** |
 | Push subscription (endpoint, keys) | attached to registry rows | Recall delivery. |
-| Recall list | `recalls` (public) | It's public information. |
+| Recall list | `recalls` (public) — **not built yet, no table exists** | It's public information. |
+| Passkey material | `webauthn_credentials`: `external_id`, `public_key`, `sign_count`, timestamps | WebAuthn verification needs them server-side by construction. Reveals how many passkeys an account has and when each was added; no identity, and the private key never leaves the authenticator. |
+| Wrapped key material | `accounts.recovery_wrapped_dek`, `accounts.recovery_auth_digest`, `webauthn_credentials.wrapped_dek` | The envelope itself: ciphertext the server cannot open, plus a non-invertible digest used to check a recovery proof. Useless without a passkey or the kit. |
 | Product reference data | `products` (public) | Powers the app's preset dropdowns AND recall matching — one table, two jobs. |
 
 Dose frequency: **encrypted** by default (reminders ship as client-generated ICS, so the server doesn't need it). **Push dose reminders are a planned feature, not a maybe** — calendars suit desk workers; push suits everyone with a phone. They are strictly **opt-in**: opting in creates a `reminder_escrows` row (account_id, next_due_at, frequency) after an explicit tradeoff explanation; opting out deletes it. Opt-in escrow is the standing pattern for any future plaintext.
@@ -68,14 +71,15 @@ Client-generated **ICS file** (download/share — not a hosted subscription URL,
 - Keep `created_at`/`updated_at` everywhere. They're the idle sweep, sync conflict tiebreaker, and debugging backbone; with blob-per-pen they no longer proxy dose events.
 - uuidv7 PKs for `accounts`, `pens`, `webauthn_credentials` (index locality; embedded creation time is accepted activity metadata). uuidv4 **only** for `pen_registrations` (severs timing linkage).
 - **No pgcrypto / server-side column encryption** (incl. Rails `encrypts`): keys would have to exist server-side at query time, which breaks "the operator can never read it" structurally. The client-side envelope already covers the stolen-disk/backup threat pgcrypto addresses; deliberate plaintext (registry, timestamps) must stay plaintext to do its job. Decided 2026-08-04.
-- Indices only on what's queried: `pens.account_id`, `pen_registrations (product_id, batch)`, `accounts.updated_at` (idle sweep), `webauthn_credentials.external_id`.
+- Indices only on what's queried. Currently: `pens.account_id`, `pens.archived_at` (retention sweep), `accounts.updated_at` (idle sweep), `webauthn_credentials.external_id` (login lookup) and `.account_id`, `pen_registrations (product_id, batch)`, `.product_id` and `.push_subscription_id` (foreign keys). Check `db/schema.rb` rather than this list when it matters.
 - Ciphertext is opaque — nothing else needs indexing.
 
 ## Policies
 
-- **Archived pens**: a finished/expired pen can be archived rather than trashed — it keeps its dose history and batch number, drops out of the pen switcher, and is reachable from the account panel. Retention is 2 years from archiving, enforced server-side by `PenPurgeJob` against `pens.archived_at` (trashing is still immediate and total). Re-saving an archived pen must not restart the clock. **[decided 2026-08-04]**
+- **Archived pens**: a finished/expired pen can be archived rather than trashed — it keeps its dose history and batch number, drops out of the pen switcher, and is reachable from the account panel. Retention is 2 years from archiving, applied server-side by `PenPurgeJob` against the server-stamped `pens.archived_at` (trashing is still immediate and total). Re-saving an archived pen must not restart the clock. **[decided 2026-08-04]**
+  - *Honest status:* the sweep is **best-effort, not scheduled** — with deployment undecided there is no cron, so it runs opportunistically when someone lists their pens, plus `rake pens:purge`. A pen belonging to an account nobody opens again is not deleted on time. Don't call this "automatic" in docs or UI until a scheduler exists. **[open: scheduler]**
 - **Time handling**: everything crosses the wire as UTC ISO8601 and the client only *formats* it for the viewer's zone. Dates and deadlines are calculated server-side with ActiveSupport, never in the browser — browser date arithmetic silently shifted a retention deadline by a day for a non-UTC user (AGENTS.md §9.6). The exception is a user-entered dose date, which is a local calendar date living inside the encrypted blob. **[decided 2026-08-04]**
-- **Idle deletion**: accounts untouched for 2 years are deleted (defined by `accounts.updated_at`). With no plaintext contact channel there is no pre-deletion warning email — a push warning at ~23 months is possible where a subscription exists. Document the policy publicly. **[decided]**
+- **Idle deletion** — **policy decided, NOT built.** No job, task or spec exists; `accounts.updated_at` is maintained and indexed ready for it, and nothing in the UI tells users the policy yet. Both must land before this can be described as in force. Accounts untouched for 2 years are deleted (defined by `accounts.updated_at`). With no plaintext contact channel there is no pre-deletion warning email — a push warning at ~23 months is possible where a subscription exists. Document the policy publicly. **[decided]**
 - **Account deletion**: one panel, full cascade (account, credentials, pens, registrations via client-held IDs, escrows), one confirmation step. State the backup-retention window (suggest 30 days) after which deleted data is gone from backups too. **[open: retention window]**
 - **Backups**: encrypted at rest; same access controls as prod.
 

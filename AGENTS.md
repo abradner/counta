@@ -91,8 +91,9 @@ association (`current_account.pens.find(id)`), never a bare unscoped lookup by I
 (`Pen.find(id)`). An unscoped lookup is exactly how one user's dose history becomes visible to
 another. Enforced since the first cut: `Api::PensController` scopes every action, and
 `spec/requests/pens_scoping_spec.rb` is the R-001 cross-account-denied regression test. The one
-deliberate bare lookup is `RecoveriesController` (auth bootstrap, gated on the 256-bit recovery
-proof — see the comment there).
+deliberate bare lookups are the two auth-bootstrap ones, where there is no user to scope by yet:
+`ApplicationController#current_account` (resolves the session cookie) and `RecoveriesController`
+(gated on the 256-bit recovery proof — see the comment there). Everything else scopes.
 
 ### 4.2 Dose/click data is sensitive and opaque by default
 
@@ -135,8 +136,14 @@ mise exec -- bundle exec rspec               # full suite (system specs need chr
 ```
 
 Pre-deploy testing: `https://counta.click` maps to this host's port 25425 (TLS terminated
-upstream at haproxy; the server must listen on `0.0.0.0`, and WebAuthn only works via that
-https origin or localhost — see `config.x.webauthn_*` in the environment files).
+upstream at haproxy; the server must listen on `0.0.0.0`). **Use that hostname, not
+`localhost:25425`** — WebAuthn binds ceremonies to an exact origin, and development is configured
+for `https://counta.click` only (the test env is the one that uses localhost). See
+`config.x.webauthn_*` in the environment files.
+
+That also means development is exposed to the internet, which it isn't built for: `web-console`
+is explicitly denied in `config/environments/development.rb` for that reason (R-005). A real
+deployment should run `RAILS_ENV=production`.
 
 ### 6.1 Known Environment Gotchas
 
@@ -291,7 +298,8 @@ test lives** (if one exists).
    that yields no PRF output proves "unsupported"), and the follow-up get() can throw
    NotAllowedError because create() consumed the user-activation gesture → treat create-time PRF
    signals as a fast path only, and design any WebAuthn-call-after-WebAuthn-call flow to re-ask
-   for a user gesture (see `requestGesture` in `app/javascript/passkeys.js`) → the virtual
+   for a user gesture (`requestGesture`, defined in `app/javascript/app.js` and passed into
+   `passkeys.js`) → the virtual
    authenticator can't reproduce this; covered by the manual walkthrough's signup step.
 5. Saving a pen 422'd on a real device (and delete-account failed silently) while the whole
    system suite was green → two causes stacked: `reset_session` in signup/login/recovery rotates

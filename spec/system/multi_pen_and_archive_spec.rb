@@ -43,7 +43,7 @@ RSpec.describe "Multiple pens and archiving", type: :system do
 
     click_button "Archive this pen"
     expect(page).to have_text("Archived", wait: 10)
-    expect(page).to have_text("counta.click deletes the record automatically")
+    expect(page).to have_text("after which counta.click deletes it")
 
     # History and batch survive; dose entry is gone.
     expect(find("#history").text).to include("clicks")
@@ -80,7 +80,7 @@ RSpec.describe "Multiple pens and archiving", type: :system do
     find("#account-btn").click
     expect(find("#archived-list")).to have_text("Fiasp")
     within("#archived-list") { click_button "Open" }
-    expect(page).to have_text("counta.click deletes the record automatically", wait: 10)
+    expect(page).to have_text("after which counta.click deletes it", wait: 10)
   end
 
   it "archives from the edit screen" do

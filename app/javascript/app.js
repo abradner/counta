@@ -97,7 +97,7 @@ async function persistPen(p, { archived = p.archivedAt != null } = {}) {
 async function loadPens() {
   const rows = await api("/api/pens");
   pens = [];
-  // Retention is enforced server-side by PenPurgeJob — nothing to prune here.
+  // Retention is applied server-side by PenPurgeJob — nothing to prune here.
   for (const row of rows) {
     const p = { data: await decryptPayload(dek, row.blob) };
     adoptRow(p, row);
@@ -288,7 +288,7 @@ function renderArchivedNote(p) {
     "Archived ", timeEl(p.archivedAt),
     ". Its dose history and batch number stay in your encrypted data until ",
     timeEl(p.purgeAfter),
-    ", then counta.click deletes the record automatically."
+    ", after which counta.click deletes it."
   );
 }
 
@@ -611,9 +611,16 @@ function wire() {
   $("landing-signin").addEventListener("click", () => doSignIn("landing-error"));
   $("landing-recover").addEventListener("click", () => { clearError("rec-error"); show("recovery-screen"); });
   $("landing-flush").addEventListener("click", async () => {
-    await api("/device/flush", { method: "POST" });
-    announce("Push data for this device cleared.");
-    alert("Any push data this device created on the server has been removed.");
+    try {
+      await api("/device/flush", { method: "POST" });
+    } catch (e) {
+      showError("landing-error", e);
+      return;
+    }
+    // Deliberately does not claim a deletion: the endpoint is a stub until
+    // push notifications exist, and there is nothing to delete yet.
+    announce("No push data found for this device.");
+    alert("counta hasn’t registered any push data for this browser — there’s nothing to clear yet.");
   });
 
   // disclaimer / prf dialogs

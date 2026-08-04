@@ -18,10 +18,13 @@
         <button class="btn secondary" id="landing-signin">Sign in with passkey</button>
         <button class="btn secondary" id="landing-recover">Recover with a saved kit</button>
       </div>
+      <%# Push notifications aren't built yet, so there is nothing for this to
+          clear. It stays visible (and honest) rather than claiming a deletion
+          that doesn't happen — see docs/data-privacy.md "device hygiene". %>
       <p class="hint" style="margin-top:14px">
-        <button class="linklike" id="landing-flush">Remove this device’s push data</button>
-        — clears any push subscription rows this browser created, no account needed.
-      </p>
+        counta doesn’t send push notifications yet. When it does, this is where
+        you’ll be able to clear everything this browser registered, without an
+        account. <button class="linklike" id="landing-flush">Check for push data</button></p>
     </div>
     <div id="landing-error" class="warn red" role="alert" hidden></div>
   </section>
@@ -237,8 +240,10 @@
 <dialog id="info-dlg" aria-labelledby="info-title">
   <h3 id="info-title">Why batch &amp; expiry?</h3>
   <p>The <strong>expiry</strong> feeds the won’t-finish-in-time warning at your dose
-     frequency, and the <strong>batch number</strong> makes recall matching possible.
-     Both are stored inside your encrypted pen record — nothing else is done with them.</p>
+     frequency. The <strong>batch number</strong> is recorded so it’s to hand if a
+     recall is ever announced — counta can’t match recalls for you yet.</p>
+  <p>Both are stored inside your encrypted pen record. counta.click can’t read
+     either of them.</p>
   <button class="btn secondary" id="info-close">Close</button>
 </dialog>
 
@@ -265,8 +270,8 @@
 <dialog id="delete-dlg" aria-labelledby="delete-title">
   <h3 id="delete-title">Delete account &amp; all data?</h3>
   <p>This permanently deletes your account, passkeys and encrypted pen records.
-     Deleted data leaves backups within 30 days. There is no undo — counta.click
-     holds no copy of your keys.</p>
+     There is no undo — counta.click holds no copy of your keys, so nothing can
+     be restored for you afterwards.</p>
   <button class="btn danger" id="delete-yes">Delete everything</button>
   <button class="btn secondary" id="delete-no">Keep my account</button>
 </dialog>
