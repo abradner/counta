@@ -11,8 +11,10 @@
 Counta is a simple, secure, easy-to-use tool for counting clicks on measured-dose pens (e.g. Novo
 Nordisk's FlexTouch) — the kind of pen injector where a dose is dialed by turning it a number of
 "clicks," each an audible/tactile detent. Counta helps a user track those clicks/doses over time
-without the manual tally-keeping that's easy to lose or get wrong. Status: greenfield — no
-application code has been written yet; this session is the template init.
+without the manual tally-keeping that's easy to lose or get wrong. Status: first working cut
+(2026-08-04) — passkey+PRF envelope crypto, encrypted pen blob CRUD, dose UI ported from the
+prototype, ICS export, account panel, first-run flow. Design authority: `docs/data-privacy.md`
+and `docs/design-notes.md` (don't re-litigate items marked [decided]).
 
 Domain nouns an agent will encounter:
 - **Pen** — a physical measured-dose injector device belonging to one user.
@@ -82,24 +84,28 @@ A conflict with a principle is a stop-and-check, never something to quietly work
 
 These are non-negotiable. Violating them will break things or be rejected in review.
 
-No application code exists yet (greenfield) — the two rules below are stated ahead of the first
-model/migration, as direct consequences of §2 principles 2 and 5, so they're a design constraint
-from the start rather than a retrofit once data exists.
-
 ### 4.1 Every data access scoped to its owning user
 
-All reads/writes of pen, dose, or click data must be scoped through the current user's own
-association (e.g. `current_user.pens.find(id)`), never a bare unscoped lookup by ID
+All reads/writes of pen, dose, or click data must be scoped through the current account's own
+association (`current_account.pens.find(id)`), never a bare unscoped lookup by ID
 (`Pen.find(id)`). An unscoped lookup is exactly how one user's dose history becomes visible to
-another. Stated, not enforced — no schema exists yet; this must hold from the first migration and
-the first controller action that touches this data.
+another. Enforced since the first cut: `Api::PensController` scopes every action, and
+`spec/requests/pens_scoping_spec.rb` is the R-001 cross-account-denied regression test. The one
+deliberate bare lookups are the two auth-bootstrap ones, where there is no user to scope by yet:
+`ApplicationController#current_account` (resolves the session cookie) and `RecoveriesController`
+(gated on the 256-bit recovery proof — see the comment there). Everything else scopes.
 
 ### 4.2 Dose/click data is sensitive and opaque by default
 
-Treat pen/dose/click records as sensitive personal health data: never log them in plaintext (Rails
-parameter filtering must cover these fields from the first request log), and encrypt at rest
-(Rails' built-in `encrypts`) any field that reveals dosing history. Stated, not enforced — no
-schema exists yet; enforce starting with the first migration that touches this data.
+Treat pen/dose/click records as sensitive personal health data: never log them in plaintext
+(Rails parameter filtering covers blob/batch/expiry/dek/credential fields —
+`config/initializers/filter_parameter_logging.rb`, pinned by
+`spec/models/structural_privacy_spec.rb`). Encryption at rest goes further than the original
+"Rails `encrypts`" wording: every dosing-history field lives inside the client-side AES-256-GCM
+pen blob and the server never holds the keys (`docs/data-privacy.md` "Crypto design" — that doc
+supersedes the earlier server-side-encryption phrasing; server-side `encrypts`/pgcrypto would put
+keys where the design promises they never go). Plaintext columns are limited to the data map's
+enumerated list.
 
 ## 5. Repository Map
 
@@ -117,26 +123,52 @@ conversation context, only what's written down.
 
 ## 6. Development Essentials
 
-Greenfield: no Rails app has been scaffolded yet (no `Gemfile`, no `bin/`, no `app/`). Once
-`rails new` is run for this project, this section must be filled with the real dev-machine
-invocations — setup, dev server, `bundle exec rspec`, lint/format if adopted — each prefixed with
-`mise exec --` (or after `mise install` + shell activation) so a fresh shell resolves the pinned
-Ruby, not whatever's on `PATH`. Until then, don't assume any dev-server or test command works.
+All commands run with `mise exec --` (or after `mise install` + shell activation) so a fresh
+shell resolves the pinned Ruby, not whatever's on `PATH`. PostgreSQL comes from docker-compose.
+
+```sh
+docker compose up -d db                      # Postgres 18 on host port 25432
+mise install
+mise exec -- bundle install
+mise exec -- bundle exec rails db:prepare db:seed
+mise exec -- bundle exec rails server -d -b 0.0.0.0 -p 25425   # dev server
+mise exec -- bundle exec rspec               # full suite (system specs need chromium)
+```
+
+Pre-deploy testing: `https://counta.click` maps to this host's port 25425 (TLS terminated
+upstream at haproxy; the server must listen on `0.0.0.0`). **Use that hostname, not
+`localhost:25425`** — WebAuthn binds ceremonies to an exact origin, and development is configured
+for `https://counta.click` only (the test env is the one that uses localhost). See
+`config.x.webauthn_*` in the environment files.
+
+That also means development is exposed to the internet, which it isn't built for: `web-console`
+is explicitly denied in `config/environments/development.rb` for that reason (R-005). A real
+deployment should run `RAILS_ENV=production`.
 
 ### 6.1 Known Environment Gotchas
 
 Things that cost real time to discover once — don't rediscover them. Add entries as they're found;
 add rather than rewrite.
 
-(Starts empty. Entry shape: the symptom, the actual cause, the workaround. Host quirks, port
-collisions with sibling projects, toolchain path issues, platform limitations.)
+(Entry shape: the symptom, the actual cause, the workaround. Host quirks, port collisions with
+sibling projects, toolchain path issues, platform limitations.)
+
+1. **haproxy 503 right after server start** → haproxy's health check hasn't seen the backend yet
+   → wait ~5–10 s and retry; not an app failure.
+2. **`rails server -b 0.0.0.0` serves port 3000, haproxy 503s forever** → `-b` replaces the whole
+   puma binding, discarding the port configured in `config/puma.rb` → always pass `-p 25425`
+   together with `-b`.
+3. **No chromedriver exists for linux-arm64** (this dev box is a Raspberry Pi) → system specs use
+   Cuprite/Ferrum, which drives Chromium over raw CDP — which is also how the WebAuthn virtual
+   authenticator (PRF) is injected. Don't add selenium-webdriver.
+4. **Headless Chromium can't keystroke `<input type=month>`** (locale-formatted typing) → set the
+   value via JS and dispatch a `change` event; see `save_pen` in `spec/support/counta_flows.rb`.
 
 ## 7. CI & Deployment
 
-No CI is configured yet — there's no app code to lint or test. Once the Rails app is scaffolded,
-add a GitHub Actions workflow that runs `bundle exec rspec` (and a linter, if one is adopted) on
-every PR, using the mise-pinned Ruby version. Deployment is undecided — don't build for it until
-asked.
+CI: `.github/workflows/ci.yml` runs `bundle exec rspec` (including the browser system specs) on
+every PR and push to main, with the mise-pinned Ruby and a Postgres 18 service on the same port
+as local dev. No linter is adopted yet. Deployment is undecided — don't build for it until asked.
 
 Two universal cautions, whatever the pipeline:
 
@@ -244,7 +276,66 @@ be cited from code comments and PR descriptions.
 Entry shape: **what happened → the actual root cause → the general rule → where the regression
 test lives** (if one exists).
 
-(Starts empty. The first entry usually arrives within days.)
+1. The envelope spec tried to delete the first passkey from the virtual authenticator after
+   enrolling a second one and got "credential not found" → discoverable (resident) credentials
+   are keyed by (rpId, userHandle), so enrolling a second passkey for the same account on the
+   SAME authenticator silently *replaces* the first → never assume server-side credential rows
+   and authenticator-side credentials stay 1:1; design add-passkey flows and their tests around
+   replacement → `spec/system/crypto_envelope_spec.rb` (asserts the replacement, then proves the
+   second credential's unwrap path).
+2. `ENV.fetch` for production-only required config placed in `config/database.yml` ERB crashed
+   dev/test boot → the ERB in database.yml is evaluated in every environment when the file is
+   parsed → scope required-config fail-fast to the environment that requires it
+   (`if Rails.env.production?`), which keeps the fail-fast without breaking other envs → boot of
+   any env exercises it.
+3. "Hidden" app sections (pen graphic, empty error pills) rendered on the landing page → the
+   `hidden` attribute only works via the UA stylesheet's `display:none`, which ANY authored
+   display rule on the same element (`main{display:grid}`, `.warn{display:flex}`) silently
+   overrides → every stylesheet that toggles visibility with `hidden` needs
+   `[hidden]{display:none !important}` → `spec/system/landing_spec.rb`.
+4. Signup failed for a real 1Password-on-iOS passkey that the virtual-authenticator suite passed
+   → two provider quirks: `prf.enabled` in the create() result is unreliable (only an assertion
+   that yields no PRF output proves "unsupported"), and the follow-up get() can throw
+   NotAllowedError because create() consumed the user-activation gesture → treat create-time PRF
+   signals as a fast path only, and design any WebAuthn-call-after-WebAuthn-call flow to re-ask
+   for a user gesture (`requestGesture`, defined in `app/javascript/app.js` and passed into
+   `passkeys.js`) → the virtual
+   authenticator can't reproduce this; covered by the manual walkthrough's signup step.
+5. Saving a pen 422'd on a real device (and delete-account failed silently) while the whole
+   system suite was green → two causes stacked: `reset_session` in signup/login/recovery rotates
+   the CSRF token so the open page's `<meta>` token goes stale, AND Rails disables forgery
+   protection in the test env so no spec could see it → any endpoint that resets the session must
+   hand the client a fresh CSRF token in its response (`fresh_csrf` /
+   `adoptCsrfToken`), and browser-driven system specs must run with
+   `ActionController::Base.allow_forgery_protection = true` → `spec/support/system.rb` (around
+   hook) makes every session-rotating system spec a regression test.
+6. An archived pen's 2-year retention deadline landed a day early → the browser calculated it and
+   `toISOString()` converted local midnight to the previous day in UTC+10 → **don't calculate
+   dates or deadlines in the browser at all.** The server owns them (ActiveSupport,
+   `Pen::ARCHIVE_RETENTION`), everything crosses the wire as UTC ISO8601, and the client only
+   formats for the local zone. Where a local *calendar* date is genuinely the right thing (a
+   user-entered dose date), build it from local getters, never `toISOString()` →
+   `spec/requests/pens_archive_spec.rb`.
+7. The prototype's small-screen shortcut (`.app{zoom:0.82}`) shipped into the real app and broke
+   iOS layout → `zoom` doesn't scale native form controls, so date/month inputs kept their
+   intrinsic width and overflowed their card → do the real responsive pass (breakpoint sizing +
+   `appearance:none` on date inputs) rather than porting a prototype-only hack; treat
+   "prototype only" notes in design docs as load-bearing.
+8. A spec claiming "re-saving an archived pen doesn't restart its retention clock" passed with
+   the guard deliberately removed → it drove the UI through a path that never issues a save, so
+   it asserted an unchanged value that nothing had tried to change → when a test targets an
+   invariant, revert the mechanism and watch it fail *before* trusting it; if the invariant isn't
+   reachable from the UI, test it at the layer where it is (request spec, not system spec) →
+   `spec/requests/pens_archive_spec.rb`.
+9. A system spec asserting `"Archived 9 Mar 2025"` passed locally and failed on CI, which renders
+   `"Mar 9, 2025"` → the app formats server-sent UTC instants in the *viewer's* locale (correct
+   for users), and the browser takes that locale from the environment → **don't assert on
+   locale-formatted text**; render `<time datetime="…">` and assert the machine-readable
+   attribute. Reproduce a locale-dependent failure locally with `LC_ALL=en_US.UTF-8` — that does
+   drive Intl, whereas Chromium's `--lang` flag does **not**. The first attempted fix pinned
+   `--lang` and "passed", which proved nothing: when fixing an environment-dependent test, first
+   confirm the lever you're pulling actually changes the output (`spec/support/system.rb`,
+   `spec/system/multi_pen_and_archive_spec.rb`).
 
 ## 10. Maintaining This Document
 

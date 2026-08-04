@@ -4,5 +4,14 @@
 # Use this to limit dissemination of sensitive information.
 # See the ActiveSupport::ParameterFilter documentation for supported notations and behaviors.
 Rails.application.config.filter_parameters += [
-  :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn, :cvv, :cvc
+  :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn, :cvv, :cvc,
+  # Counta: pen/dose data is sensitive health data and must never appear in
+  # request logs, ciphertext included (AGENTS.md §4.2). Partial matches cover
+  # blob, wrapped_dek, batch, expiry/expiry_month, custom_product_name,
+  # recovery proof, and WebAuthn ceremony payloads.
+  :blob, :dek, :batch, :expiry, :product_name, :proof, :prf,
+  :attestation, :assertion, :credential,
+  # The stored verifier for the recovery path. Not invertible and not a bearer
+  # token, but it's account-recovery material and doesn't belong in a log.
+  :digest
 ]

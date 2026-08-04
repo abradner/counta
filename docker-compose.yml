@@ -1,0 +1,20 @@
+# Local dev/test services only — the app itself runs on the host via mise.
+# Ports are offset (25xxx) to avoid collisions with sibling projects.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: counta
+      POSTGRES_PASSWORD: counta_dev # local-only credential, never production
+    ports:
+      - "25432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U counta"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  pgdata:

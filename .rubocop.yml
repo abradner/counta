@@ -1,0 +1,10 @@
+# Rails omakase: take the framework defaults and spend the argument budget
+# elsewhere. Add overrides below only with a reason.
+inherit_gem:
+  rubocop-rails-omakase: rubocop.yml
+
+AllCops:
+  Exclude:
+    - "db/schema.rb"
+    - "vendor/**/*"
+    - "bin/**/*"

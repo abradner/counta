@@ -1,0 +1,292 @@
+<div class="app">
+  <header class="top">
+    <div class="logo">counta<span>.click</span></div>
+    <%# Multi-pen switcher: a real <select> (docs/design-notes.md "Multi-pen") %>
+    <select class="pen-chip" id="chip" aria-label="Your pens" hidden></select>
+    <button class="iconbtn account-btn" id="account-btn" aria-label="Account and data" hidden>☰</button>
+  </header>
+
+  <%# ============ LANDING (signed out) ============ %>
+  <section id="landing-screen" hidden>
+    <div class="card">
+      <h2>Count pen clicks, privately</h2>
+      <p>counta keeps a click/dose tally for measured-dose pens. Your pen and dose
+         data is encrypted on your device with keys held by your passkeys —
+         counta.click can never read it.</p>
+      <div style="margin-top:16px">
+        <button class="btn" id="landing-create">Create account</button>
+        <button class="btn secondary" id="landing-signin">Sign in with passkey</button>
+        <button class="btn secondary" id="landing-recover">Recover with a saved kit</button>
+      </div>
+      <%# Push notifications aren't built yet, so there is nothing for this to
+          clear. It stays visible (and honest) rather than claiming a deletion
+          that doesn't happen — see docs/data-privacy.md "device hygiene". %>
+      <p class="hint" style="margin-top:14px">
+        counta doesn’t send push notifications yet. When it does, this is where
+        you’ll be able to clear everything this browser registered, without an
+        account. <button class="linklike" id="landing-flush">Check for push data</button></p>
+    </div>
+    <div id="landing-error" class="warn red" role="alert" hidden></div>
+  </section>
+
+  <%# ============ UNLOCK (session exists, DEK not in memory) ============ %>
+  <section id="unlock-screen" hidden>
+    <div class="card">
+      <h2>Unlock your data</h2>
+      <p>Your data is encrypted; your passkey holds the key. Unlocking runs a
+         passkey check on this device.</p>
+      <button class="btn" id="unlock-btn">Unlock with passkey</button>
+      <button class="btn secondary" id="unlock-signout">Sign out</button>
+      <div id="unlock-error" class="warn red" role="alert" hidden style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <%# ============ RECOVERY ============ %>
+  <section id="recovery-screen" hidden>
+    <div class="card">
+      <h2>Recover with your kit</h2>
+      <p>Enter the account ID and the 24 words from your recovery kit, or load the
+         kit file.</p>
+      <label for="rec-file">Kit file</label>
+      <input type="file" id="rec-file" accept="application/json,.json,.txt">
+      <label for="rec-account">Account ID</label>
+      <input type="text" id="rec-account" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-…">
+      <label for="rec-words">24 words</label>
+      <textarea id="rec-words" rows="3" autocomplete="off" spellcheck="false" autocapitalize="none"></textarea>
+      <div style="margin-top:14px">
+        <button class="btn" id="rec-submit">Recover</button>
+        <button class="btn secondary" id="rec-cancel">Back</button>
+      </div>
+      <div id="rec-error" class="warn red" role="alert" hidden style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <%# ============ MAIN APP ============ %>
+  <main id="app-screen" hidden>
+    <div class="pen-col">
+      <%= render "pen_svg" %>
+      <%# Visually redundant — the card next to it already says which mode
+          you're in — but flipping the pen IS the mode transition, so screen
+          reader users still get it announced. %>
+      <div class="visually-hidden" id="pen-caption" aria-live="polite">Front of pen</div>
+    </div>
+
+    <div class="panel-col">
+      <section class="card" id="setup-card" hidden>
+        <h2>Set up this pen
+          <button class="iconbtn" id="info-btn" aria-label="Why we ask for batch and expiry">i</button>
+        </h2>
+        <label for="f-product">Product</label>
+        <select id="f-product"></select>
+        <div id="custom-name-wrap" hidden>
+          <label for="f-name">Product name</label>
+          <input type="text" id="f-name" autocomplete="off" placeholder="e.g. Ozempic 1 mg">
+          <%# counta can't know an unlisted pen's counter, and guessing "shows
+              numbers" would have it tell people to dial to a number their pen
+              may never display. Ask; default to the answer that claims least. %>
+          <label for="f-counter-style">Your pen’s dose counter</label>
+          <select id="f-counter-style">
+            <option value="progress">Doesn’t show a readable number</option>
+            <option value="numeric">Shows the dose as a number</option>
+          </select>
+          <p class="hint">If you’re not sure, leave this as-is — counta will just
+            count clicks and won’t tell you to dial to a number.</p>
+        </div>
+        <label for="f-capacity">Pen capacity</label>
+        <select id="f-capacity"></select>
+        <div id="custom-cap-wrap" hidden>
+          <div class="row">
+            <div><label for="f-cap-units">Total medicine</label><input type="number" id="f-cap-units" inputmode="decimal" placeholder="9.6"></div>
+            <div><label for="f-cap-unitname">Unit</label><input type="text" id="f-cap-unitname" placeholder="mg"></div>
+          </div>
+        </div>
+        <label for="f-clicks">Total clicks in the pen</label>
+        <input type="number" id="f-clicks" inputmode="numeric">
+        <p class="hint" id="clicks-hint">Pre-filled for this pen. Override it if your pen is different.</p>
+        <div class="row">
+          <div><label for="f-batch">Batch no.</label><input type="text" id="f-batch" autocomplete="off" placeholder="LP1234"></div>
+          <div><label for="f-expiry">Expiry</label><input type="month" id="f-expiry"></div>
+        </div>
+        <label for="f-freq">Dose frequency</label>
+        <select id="f-freq">
+          <option value="7">Every 7 days (weekly)</option>
+          <option value="1">Every day</option>
+          <option value="3.5">Twice a week</option>
+          <option value="14">Every 14 days</option>
+        </select>
+        <div style="margin-top:16px">
+          <button class="btn" id="save-pen">Save pen</button>
+          <button class="btn secondary" id="cancel-setup" hidden>Cancel</button>
+          <button class="btn secondary" id="archive-pen-edit" hidden>Archive this pen</button>
+          <button class="btn danger" id="trash-pen-edit" hidden>Trash this pen</button>
+        </div>
+      </section>
+
+      <section class="card" id="dose-card" hidden>
+        <h2 id="dose-h">Your dose</h2>
+        <div id="archived-note" class="warn amber" hidden>
+          <span aria-hidden="true">🗄</span><span id="archived-note-text"></span>
+        </div>
+        <div id="dose-entry">
+          <div class="seg" role="group" aria-label="Dose units">
+            <button id="seg-units" aria-pressed="true">mg</button>
+            <button id="seg-clicks" aria-pressed="false">clicks</button>
+          </div>
+          <div class="chips" id="chips" role="group" aria-label="Common doses"></div>
+          <div class="doserow">
+            <button class="step" id="minus" aria-label="One click less">−</button>
+            <input id="f-dose" type="number" inputmode="decimal" aria-label="Dose amount" step="any">
+            <button class="step" id="plus" aria-label="One click more">+</button>
+          </div>
+          <div class="readout" aria-live="polite" id="readout">
+            <div class="big" id="readout-big"></div>
+            <div class="sub" id="readout-sub"></div>
+          </div>
+          <label for="f-date">Date of dose</label>
+          <input type="date" id="f-date">
+          <div style="margin-top:14px">
+            <button class="btn" id="dose-now">Dose now</button>
+          </div>
+          <div id="warnings" aria-live="polite"></div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <h2 style="margin-top:16px">Recent doses</h2>
+        <ul class="history" id="history"><li class="empty">No doses yet</li></ul>
+        <div style="margin-top:16px">
+          <button class="btn secondary" id="archive-pen" hidden>Archive this pen</button>
+          <button class="btn secondary" id="unarchive-pen" hidden>Unarchive this pen</button>
+          <button class="btn secondary" id="export-ics">Add dose reminders to calendar</button>
+          <button class="btn secondary" id="edit-pen">Edit this pen’s data</button>
+          <button class="btn danger" id="trash-pen" hidden>Trash this pen</button>
+        </div>
+      </section>
+
+      <footer>Your pen and dose data is end-to-end encrypted — counta.click can’t read it.<br>
+        counta helps you count clicks; it isn’t medical advice.</footer>
+    </div>
+  </main>
+
+  <%# ============ ACCOUNT & DATA PANEL ============ %>
+  <section id="account-screen" hidden>
+    <div class="card">
+      <h2>Account &amp; data</h2>
+      <p class="hint">Account ID: <code id="acct-id"></code></p>
+      <h2 style="margin-top:14px">Archived pens</h2>
+      <ul class="history" id="archived-list"></ul>
+      <h2 style="margin-top:18px">Passkeys</h2>
+      <ul class="history" id="passkey-list"></ul>
+      <p class="hint" id="add-passkey-hint">Adding a passkey wraps your data key for the new
+        passkey on this device — it only works while unlocked.</p>
+      <button class="btn secondary" id="add-passkey">Add a passkey</button>
+      <h2 style="margin-top:18px">Recovery kit</h2>
+      <p class="hint" id="kit-status">A recovery kit was created with this account. If you lose
+        every passkey, the kit is the only way back in.</p>
+      <h2 style="margin-top:18px">Danger zone</h2>
+      <button class="btn danger" id="delete-account">Delete account &amp; all data</button>
+      <div style="margin-top:18px">
+        <button class="btn secondary" id="account-back">Back to pens</button>
+        <button class="btn secondary" id="sign-out">Sign out</button>
+      </div>
+      <div id="account-error" class="warn red" role="alert" hidden style="margin-top:10px"></div>
+    </div>
+  </section>
+</div>
+
+<%# ============ DIALOGS ============ %>
+
+<dialog id="disclaimer-dlg" aria-labelledby="disclaimer-title">
+  <h3 id="disclaimer-title">Before you start</h3>
+  <p><strong>counta counts clicks; it isn’t medical advice.</strong> It shows what a
+     dial position corresponds to — it never tells you what to take.</p>
+  <p>How your data works: your account is an anonymous ID — no email, no name.
+     Pen and dose details are encrypted on your device; the keys live in your
+     passkeys and recovery kit. counta.click can’t read your data, and also
+     can’t reset access you lose.</p>
+  <button class="btn" id="disclaimer-accept">I understand — continue</button>
+  <button class="btn secondary" id="disclaimer-cancel">Not now</button>
+</dialog>
+
+<dialog id="prf-dlg" aria-labelledby="prf-title">
+  <h3 id="prf-title">That passkey can’t be used here</h3>
+  <p>counta encrypts your data with a key derived from your passkey, which needs
+     the PRF feature. The passkey you just tried doesn’t offer it. A platform
+     passkey — Face ID / Touch ID, Windows Hello, or Android screen lock — on a
+     current OS usually does. Security keys vary.</p>
+  <button class="btn" id="prf-retry">Try a different passkey</button>
+  <button class="btn secondary" id="prf-cancel">Cancel</button>
+</dialog>
+
+<dialog id="gesture-dlg" aria-labelledby="gesture-title">
+  <h3 id="gesture-title">One more passkey check</h3>
+  <p>Your browser needs another tap before it lets counta finish setting up
+     encryption with the new passkey.</p>
+  <button class="btn" id="gesture-continue">Continue</button>
+</dialog>
+
+<dialog id="kit-dlg" aria-labelledby="kit-title">
+  <h3 id="kit-title">Your recovery kit — shown once</h3>
+  <p class="kit-warning"><strong>If you lose every passkey and this kit, your data is
+     gone.</strong> No one — including counta.click — can recover it. That’s the design
+     that keeps it private.</p>
+  <a class="btn" id="kit-download" download="counta-recovery-kit.json">Download kit file</a>
+  <p class="hint" style="margin-top:8px">Keep the file somewhere safe outside this device —
+     a password manager works well. It holds your account ID and recovery words.</p>
+  <details class="kit-details">
+    <summary id="kit-words-toggle">Prefer to write it down? Show the words</summary>
+    <p class="hint">Account ID (record it with the words):</p>
+    <code class="kit-account" id="kit-account"></code>
+    <ol class="kit-words" id="kit-words"></ol>
+  </details>
+  <label class="kit-confirm"><input type="checkbox" id="kit-saved-check">
+    I’ve saved the kit somewhere safe, outside this device</label>
+  <button class="btn" id="kit-done" disabled>Continue</button>
+</dialog>
+
+<dialog id="confirm-dlg" aria-labelledby="confirm-title">
+  <h3 id="confirm-title">Record this dose?</h3>
+  <div class="confirm-big" id="confirm-clicks"></div>
+  <div class="confirm-sub" id="confirm-mg"></div>
+  <button class="btn" id="confirm-yes">Yes, I dosed</button>
+  <button class="btn secondary" id="confirm-no">Cancel</button>
+</dialog>
+
+<dialog id="info-dlg" aria-labelledby="info-title">
+  <h3 id="info-title">Why batch &amp; expiry?</h3>
+  <p>The <strong>expiry</strong> feeds the won’t-finish-in-time warning at your dose
+     frequency. The <strong>batch number</strong> is recorded so it’s to hand if a
+     recall is ever announced — counta can’t match recalls for you yet.</p>
+  <p>Both are stored inside your encrypted pen record. counta.click can’t read
+     either of them.</p>
+  <button class="btn secondary" id="info-close">Close</button>
+</dialog>
+
+<dialog id="trash-dlg" aria-labelledby="trash-title">
+  <h3 id="trash-title">Trash this pen?</h3>
+  <p>This deletes the pen, its dose history and its batch number from your
+     account. If you’d rather keep the history, archive it instead — archived
+     pens stay in your encrypted data for 2 years.</p>
+  <button class="btn danger" id="trash-yes">Trash pen</button>
+  <button class="btn secondary" id="trash-no">Keep pen</button>
+</dialog>
+
+<dialog id="ics-dlg" aria-labelledby="ics-title">
+  <h3 id="ics-title">Add dose reminders to your calendar?</h3>
+  <p>This builds a calendar file on your device — open it and your calendar app
+     adds one event per remaining dose, plus a “buy more” event about two doses
+     before run-out.</p>
+  <p><strong>Heads-up:</strong> once imported, your calendar provider holds your dose
+     schedule. That tradeoff is yours to make — counta’s servers never see it.</p>
+  <button class="btn" id="ics-yes">Get calendar file</button>
+  <button class="btn secondary" id="ics-no">Cancel</button>
+</dialog>
+
+<dialog id="delete-dlg" aria-labelledby="delete-title">
+  <h3 id="delete-title">Delete account &amp; all data?</h3>
+  <p>This permanently deletes your account, passkeys and encrypted pen records.
+     There is no undo — counta.click holds no copy of your keys, so nothing can
+     be restored for you afterwards.</p>
+  <button class="btn danger" id="delete-yes">Delete everything</button>
+  <button class="btn secondary" id="delete-no">Keep my account</button>
+</dialog>
+
+<div class="visually-hidden" aria-live="polite" id="sr-live"></div>

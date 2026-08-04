@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  # Static checks are their own job so a style or advisory failure can't be
+  # mistaken for a broken test run, and vice versa.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: mise exec -- bundle install --jobs 4
+      - name: Rubocop
+        run: mise exec -- bundle exec rubocop
+      - name: Brakeman
+        run: mise exec -- bundle exec brakeman --no-pager
+      - name: Bundler audit
+        run: |
+          mise exec -- bundle exec bundle-audit update
+          mise exec -- bundle exec bundle-audit check
+
+  rspec:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:18
+        env:
+          POSTGRES_USER: counta
+          POSTGRES_PASSWORD: counta_dev
+        ports:
+          - 25432:5432
+        options: >-
+          --health-cmd "pg_isready -U counta"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the Ruby pin from mise.toml so CI can't drift from dev machines.
+      - uses: jdx/mise-action@v2
+
+      - name: Install Chromium for system specs
+        run: sudo apt-get update && sudo apt-get install -y chromium-browser
+
+      - name: Bundle
+        run: |
+          mise exec -- bundle config set path vendor/bundle
+          mise exec -- bundle install --jobs 4
+
+      - name: Prepare database
+        run: mise exec -- bundle exec rails db:prepare
+        env:
+          RAILS_ENV: test
+
+      - name: RSpec
+        run: mise exec -- bundle exec rspec

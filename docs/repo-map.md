@@ -30,24 +30,53 @@ change that found the disagreement.
 
 | Surface | Path / entry point | Auth mechanism | Notes |
 |---|---|---|---|
-| Web app (Rails) | `/` (all routes, TBD) | Not yet designed | Greenfield — no code exists yet. This is the only planned surface; auth mechanism must be decided before the first user-facing route ships. |
+| App shell | `GET /` | none (public) | Serves the SPA; all data access happens via the APIs below. |
+| WebAuthn registration | `POST /webauthn/registration[/options]` | none for signup; session cookie for add-passkey | Signup mints an anonymous account. Add-passkey additionally requires the client to hold the DEK (it must send a `wrapped_dek`). |
+| WebAuthn login/unlock | `POST /webauthn/authentication[/options]`, `DELETE /webauthn/session` | passkey assertion (usernameless, discoverable, UV required) | One assertion both authenticates and (client-side) yields the PRF output that unwraps the DEK. |
+| Kit recovery | `POST /recovery/session` | 256-bit recovery proof (HKDF of master key; server stores SHA-256 digest) | The only bare `Account` lookup in the app — auth bootstrap, uniform 401 (no existence leak). No rate limiting yet (R-003). |
+| Pens API | `/api/pens*` | session cookie | Blobs in, blobs out; strictly `current_account.pens` (R-001). |
+| Credentials / account | `GET /api/credentials`, `DELETE /api/account` | session cookie | Delete = full cascade (credentials, pens) + session reset. |
+| Products | `GET /api/products` | none (public reference data) | Presets incl. `counter_style`. |
+| Retention sweep | `PenPurgeJob` / `rake pens:purge` | none — background job, no requesting user | Deletes pens archived longer ago than `Pen::ARCHIVE_RETENTION`. Deliberate owner-scoping exception (R-004). |
+| Device flush | `POST /device/flush` | none, deliberately | Walk-away-clean without an account. **Stub** — no push rows exist yet to delete. |
 
 ## Trust boundaries
 
-No boundaries exist yet — no code has shipped. The first and most important one to define, before
-the first migration lands: **user ↔ their own pen/dose records.** Whatever auth mechanism is
-chosen, every lookup of pen/dose/click data must be scoped to the authenticated owner (see
-`AGENTS.md` §4.1) — an unscoped lookup by ID is the failure mode to design against from the start.
+- **Browser ↔ server (the E2E line).** All key material (DEK, PRF outputs, KEKs, recovery master
+  key) exists only in client JS memory (`app/javascript/crypto.js`, `auth.js`). The server holds
+  ciphertext, wrapped DEKs, and a proof digest. A fully compromised server can deny service and
+  serve hostile JS, but the stored data alone decrypts nothing (docs/data-privacy.md threat
+  model). Anything that would move plaintext or keys server-side crosses this boundary and needs
+  a design change, not a patch.
+- **Account ↔ account.** Identity = anonymous account UUID in the session cookie
+  (`ApplicationController#current_account`). Every pen read/write goes through
+  `current_account.pens`; lying about a pen ID yields 404 (`spec/requests/pens_scoping_spec.rb`).
+- **Account ↔ pen registry.** `pen_registrations` has NO account/user column by construction —
+  the link lives only inside encrypted pen blobs, client-side. Adding any account linkage (even
+  "just for debugging") destroys the recall registry's unlinkability guarantee
+  (`spec/models/structural_privacy_spec.rb` pins this).
 
 ## Cross-cutting flows
 
-None shipped yet. The first candidate, once auth and dose logging exist: **logging a click/dose**
-— request → identify the authenticated user → write the record scoped to that user's pen → the
-record must never become visible to any other user's read path. This flow is where a scoping bug
-would first surface; add it here in detail once it's actually built.
+- **Logging a dose:** UI → `history` appended inside the decrypted pen data → whole blob
+  re-encrypted client-side → `PUT /api/pens/:id` (owner-scoped) → server overwrites ciphertext
+  (last-write-wins; `updated_at` is the tiebreaker). Dose events never exist as rows — a blob per
+  pen so row counts can't reconstruct dosing rhythm. A change that "normalises" doses into rows
+  breaks this on purpose-chosen property.
+- **Losing/regaining access:** passkey assertion (PRF) and recovery kit are two independent wraps
+  of the same DEK. Adding a passkey requires an unlocked client (DEK in memory). Server-side
+  credential rows can outlive authenticator-side credentials (see AGENTS.md §9.1 — same-
+  authenticator re-enrollment replaces).
+- **Account deletion:** client should first delete registry rows via IDs held in blobs (none
+  exist yet), then `DELETE /api/account` cascades credentials + pens and resets the session.
 
 ## Risk register
 
 | ID | Risk | Where it lives | Mitigation / status |
 |---|---|---|---|
-| R-001 | Dose/click history is sensitive personal health data; a broken owner-scoping check would expose one user's data to another. | Not yet — no model exists. First model to touch this will be the future Pen/DoseLog. | Planned: enforce owner-scoping per `AGENTS.md` §4.1; add a cross-user-access-denied test before the first record-read endpoint ships. |
+| R-001 | Dose/click history is sensitive personal health data; a broken owner-scoping check would expose one user's data to another. | `Api::PensController` | Enforced: all queries via `current_account.pens`; cross-account-denied regression test `spec/requests/pens_scoping_spec.rb`. Keep every future pen/dose read path behind the same association. |
+| R-002 | Pen-registry unlinkability: any account⇄registration linkage (column, association, join table, log line) rebuilds the account⇄medicine map the design exists to prevent. | `pen_registrations` schema, future registry endpoints | Structural: no account column, uuidv4 PKs, date-quantized `created_on`; pinned by `spec/models/structural_privacy_spec.rb`. Registry create/delete endpoints not built yet — re-check this row when they are. |
+| R-003 | `POST /recovery/session` accepts unauthenticated proof attempts with no rate limiting. Proof space is 2^256 so brute force is infeasible, but the endpoint is an online oracle and deserves throttling before public launch. | `RecoveriesController` | Accepted for now; add rack-attack (or similar) before launch. |
+| R-006 | Web-delivered E2EE: the crypto is served by the server it defends against, so an attacker who can change the served JavaScript gets DEKs at the next unlock. No code change mitigates this — only out-of-band integrity (signed/pinned bundles, store-delivered app). | `app/javascript/*`, delivery | Documented in the threat model rather than papered over. Strict CSP (`connect-src 'self'`) removes the easy exfiltration path and raises the bar for injected — as opposed to served — script. |
+| R-005 | `development` is exposed publicly at counta.click for pre-deploy testing. Dev mode serves full stack traces and, by default, `web-console` — an interactive Ruby REPL authorised by remote IP, which behind a same-host proxy is `127.0.0.1` for every visitor. That is RCE, and on an E2EE app it means serving hostile JS to every user (see R-006). | `config/environments/development.rb` | web-console explicitly denied there. Real fix is running `RAILS_ENV=production`; open until deployment is decided. |
+| R-004 | `PenPurgeJob` deletes pen rows across all accounts — the one code path that touches pen data without an owner scope (a retention sweep has no requesting user). A bug in its predicate destroys user data irrecoverably, since counta.click holds no key to restore from. | `app/jobs/pen_purge_job.rb`, `Pen.retention_expired` | Selects only on the plaintext `archived_at` marker (never on ciphertext), boundary-tested in `spec/jobs/pen_purge_job_spec.rb`: just-inside-the-window is kept, and an unarchived pen is never swept however old. Any widening of that predicate needs the same scrutiny as an auth change. |

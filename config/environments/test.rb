@@ -39,4 +39,10 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Capybara serves the app on a fixed port so the WebAuthn origin is exact
+  # (origin matching is strict, including port). localhost is a secure context
+  # for Chromium, so WebAuthn works without TLS in the harness.
+  config.x.webauthn_origin = "http://localhost:25426"
+  config.x.webauthn_rp_id = "localhost"
 end

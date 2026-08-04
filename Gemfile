@@ -20,6 +20,23 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
+# WebAuthn ceremony verification (registration/authentication). All PRF/HKDF/
+# key-wrap crypto is client-side WebCrypto — the server only verifies ceremonies
+# and stores opaque wrapped keys (docs/data-privacy.md "Crypto design").
+gem "webauthn", "~> 3.4"
+
+group :development, :test do
+  gem "rspec-rails", "~> 8.0"
+  gem "factory_bot_rails"
+end
+
+group :test do
+  gem "capybara"
+  # Drives Chromium over raw CDP (no chromedriver binary exists for linux-arm64);
+  # raw CDP is also how the WebAuthn virtual authenticator (PRF) is injected.
+  gem "cuprite"
+end
+
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
@@ -29,6 +46,9 @@ group :development, :test do
 
   # Static analysis for security vulnerabilities [https://brakemanscanner.org/]
   gem "brakeman", require: false
+
+  # Rails' own style guide — omakase, so style stays undebated.
+  gem "rubocop-rails-omakase", require: false
 end
 
 group :development do
