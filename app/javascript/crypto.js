@@ -19,8 +19,15 @@ export const PRF_SALT = te.encode("counta/prf/v1");
 /* ---------- encoding helpers ---------- */
 
 export function b64u(bytes) {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  // Chunked rather than String.fromCharCode(...all): spreading a whole buffer
+  // into an argument list throws RangeError once it passes the engine's
+  // argument limit, which a pen with a long dose history would eventually hit.
+  const u8 = new Uint8Array(bytes);
+  let binary = "";
+  for (let i = 0; i < u8.length; i += 8192) {
+    binary += String.fromCharCode(...u8.subarray(i, i + 8192));
+  }
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 export function b64uDecode(str) {

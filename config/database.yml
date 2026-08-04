@@ -1,29 +1,36 @@
 # Dev/test connect to the docker-compose Postgres (`docker compose up -d db`),
 # published on host port 25432 (offset to avoid sibling-project collisions).
-# The credentials below are local-only and match docker-compose.yml — they are
-# not production config, which must come from the environment and fail fast
-# when missing (AGENTS.md "Configuration").
-default: &default
+# The credentials in `local` are exactly that — local only, matching
+# docker-compose.yml.
+#
+# Production deliberately does NOT inherit them. It used to, via a shared
+# `default` anchor, which meant a production boot would happily point at
+# 127.0.0.1:25432 with a hardcoded dev password instead of failing — the
+# silent-degradation case AGENTS.md "Configuration" exists to prevent.
+shared: &shared
   adapter: postgresql
   encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+local: &local
+  <<: *shared
   host: 127.0.0.1
   port: 25432
   username: counta
   password: counta_dev
-  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
 development:
-  <<: *default
+  <<: *local
   database: counta_development
 
 test:
-  <<: *default
+  <<: *local
   database: counta_test
 
+# Required config, fail-fast: every value comes from the environment, and a
+# missing one raises at boot rather than falling back to something local.
+# ERB here is evaluated when the file is parsed in EVERY environment, so the
+# fetches must be guarded — otherwise dev and test die on production's config.
 production:
-  <<: *default
-  database: counta_production
-  username: counta
-# The ERB below runs whenever database.yml is parsed (every env), so the
-  # required-config fail-fast must be scoped to production or dev/test die too.
-  password: <%= ENV.fetch("COUNTA_DATABASE_PASSWORD") if Rails.env.production? %>
+  <<: *shared
+  url: <%= ENV.fetch("DATABASE_URL") if Rails.env.production? %>

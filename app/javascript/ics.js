@@ -26,7 +26,10 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel)
   if (last) start.setDate(start.getDate() + Math.round(pen.freqDays));
 
   const wholeDays = Number.isInteger(pen.freqDays);
-  const stamp = icsDate(new Date()) + "T000000Z";
+  // DTSTAMP is a real UTC instant per RFC 5545 — building it from the local
+  // calendar date and suffixing "Z" put it on the wrong day for anyone whose
+  // local date differs from UTC's.
+  const stamp = new Date().toISOString().replace(/[-:]|\.\d{3}/g, "");
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
