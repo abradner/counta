@@ -78,8 +78,12 @@ client merges the two histories by dose id before retrying once. Doses carry a
 stable id for exactly that reason: two identical doses on the same day are
 otherwise indistinguishable from the same dose seen twice.
 
-A related leak survives: ciphertext length grows with the number of doses, so
-blob size approximates a dose count. Padding is the fix and is filed.
+A related leak had to be closed for that reasoning to hold at all: ciphertext
+length grew with the number of doses, so blob size approximated a dose count
+straight from a database dump. Payloads are padded to 4 KiB buckets before
+encryption — trailing whitespace inside the JSON, which `JSON.parse` ignores,
+so nothing needed migrating. Stored size now says only which bucket a pen is
+in.
 
 ## Decision 3 — Clicks are canonical; units are derived display
 
