@@ -10,7 +10,7 @@ RSpec.describe "Copy and localisation" do
   # The wordmark is a brand name, not copy — it reads "counta.click" in every
   # language. Anything else appearing here should be justified in the same
   # breath as it's added.
-  ALLOWED_LITERALS = [ "counta", ".click", "counta .click" ].freeze
+  ALLOWED_LITERALS = [ "counta", ".click", "counta.click" ].freeze
 
   # Keys the JS asks for. Harvesting only `t("literal")` would miss the
   # conditional calls — t(flag ? "status.pen_archived" : "status.pen_unarchived")
@@ -26,9 +26,12 @@ RSpec.describe "Copy and localisation" do
   # file and it's covered.
   def js_keys
     namespaces = I18n.t("client").keys.map(&:to_s)
+    # i18n.js is scanned too — the clicks() helper holds the only reference to
+    # "dose.clicks", so skipping it left that key unguarded. Comments are
+    # stripped so documentation examples don't register as real usage.
     Dir[JS_DIR.join("*.js")]
-      .reject { |f| f.end_with?("i18n.js", "wordlist.js") }
-      .flat_map { |f| File.read(f).scan(KEY_SHAPED) }
+      .reject { |f| f.end_with?("wordlist.js") }
+      .flat_map { |f| File.read(f).gsub(%r{//[^\n]*|/\*.*?\*/}m, "").scan(KEY_SHAPED) }
       .flatten.uniq
       .select { |key| namespaces.include?(key.split(".").first) }
   end
@@ -50,19 +53,20 @@ RSpec.describe "Copy and localisation" do
 
   it "has no user-facing copy left hardcoded in the views" do
     offenders = Dir[VIEW_DIR.join("**/*.html.erb")].flat_map do |file|
-      # Only HTML templates: the PWA manifest is structured data, and the pen
-      # SVG's labels are written by JS from locale keys.
-      next [] if file.end_with?("_pen_svg.html.erb")
-
+      # Only HTML templates: the PWA manifest is structured data.
       # Blank out ERB spans first — including multi-line comments — keeping
       # newlines so reported line numbers still point at the real line.
-      source = File.read(file).gsub(/<%.*?%>/m) { |span| "\n" * span.count("\n") }
+      # Blank out ERB spans AND tags across the whole file — both can span
+      # lines, and stripping them per-line leaves attribute text behind, which
+      # reads as prose. Newlines are preserved so line numbers stay honest.
+      blank = ->(span) { "\n" * span.count("\n") }
+      source = File.read(file).gsub(/<%.*?%>/m, &blank).gsub(/<[^>]*>/m, &blank)
 
       source.lines.each_with_index.filter_map do |line, i|
         # ANY word of 3+ letters, not just a pair: a hardcoded "Cancel" or
         # "Continue" is exactly as untranslatable as a hardcoded sentence, and
         # the two-word rule couldn't see them.
-        text = line.gsub(/<[^>]*>/, " ").gsub(/&\w+;/, " ").strip
+        text = line.gsub(/&\w+;/, " ").strip
         next if text.empty? || ALLOWED_LITERALS.include?(text)
 
         "#{File.basename(file)}:#{i + 1}: #{text}" if text =~ /[A-Za-z]{3,}/

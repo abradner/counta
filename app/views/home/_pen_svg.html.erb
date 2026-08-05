@@ -4,7 +4,7 @@
     #label-back flip). %>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 660" class="counta-pen" id="pen-svg" role="img" aria-labelledby="pen-title"
      style="--c-body:#F2F1EE; --c-body-dark:#D9D8D4; --c-accent:#7FD1C8; --c-label:#FFFFFF; --c-text:#123B6D; --c-liquid:#F2FAF9; --c-button:#C9C8C4; --c-button-detail:#8F8E8A; --c-neck:#E8E4DD; --c-scale:#26324B; --c-piston:#8E959F; --c-rod:#5A616C;">
-  <title id="pen-title">Your pen, live view</title>
+  <title id="pen-title"><%= t('ui.pen_svg_title') %></title>
   <defs>
     <linearGradient id="cyl-shade" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".18" stop-color="#fff" stop-opacity=".15"/>
@@ -52,9 +52,9 @@
       </g>
       <g id="label-back">
         <text id="label-batch" transform="translate(102, 248) rotate(90)" font-family="ui-monospace,monospace"
-              font-size="13" font-weight="700" fill="#3a4150">LOT —</text>
+              font-size="13" font-weight="700" fill="#3a4150"><%= t('client.pen.lot', batch: t('client.pen.unknown')) %></text>
         <text id="label-expiry" transform="translate(124, 248) rotate(90)" font-family="ui-monospace,monospace"
-              font-size="13" font-weight="700" fill="#3a4150">EXP —</text>
+              font-size="13" font-weight="700" fill="#3a4150"><%= t('client.pen.exp', expiry: t('client.pen.unknown')) %></text>
       </g>
     </g>
     <g id="cartridge-holder">

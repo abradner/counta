@@ -20,6 +20,9 @@
 # the most common localisation blocker in the original copy.
 en:
   ui:
+    # Accessible name of the pen graphic, announced by screen readers.
+    pen_svg_title: Your pen, live view
+
     header:
       pens: Your pens
       account: Account and data
