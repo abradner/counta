@@ -2,26 +2,31 @@
      role="img" aria-labelledby="favicon-title">
   <title id="favicon-title">counta.click</title>
   <!--
-    counta.click favicon.
+    counta.click icon: the dose counter window of a FlexTouch pen, with the
+    mirrored indicator that brackets it on a real Wegovy pen. Portrait, because
+    the pen is a vertical object and that silhouette is what makes the mark
+    recognisable rather than generic.
 
-    The mark is a C that doubles as a pen's dose dial: the ring is the dial,
-    the gap is the counter window, and the orange dot is the indicator sitting
-    in it. One shape carrying both the brand letter and the pen reference is
-    what lets it survive being shrunk.
+    Rules that keep it working at both ends of the size range:
+      - The numeral is DRAWN, not text. A font renders differently on every
+        platform, and this file is served as-is to browsers.
+      - Nothing thinner than 4 units, so the 16px favicon holds up.
+      - Exactly three elements: window, numeral, indicator pair. Judged at
+        16px and at iOS home-screen size; anything more turns to mud small.
+      - Navy tile, because a near-white one has no silhouette on a light
+        browser tab strip.
 
-    Authored on a 64px grid and judged at 16px, which is the size that
-    actually matters. Constraints that keep it legible there:
-      no stroke thinner than 10 units; exactly two elements plus the tile;
-      the gap is wide enough that the dot never touches the ring; no
-      gradients, no text (a font would render differently everywhere).
-
-    The navy tile is deliberate: it holds a silhouette on both light and dark
-    tab strips. A near-white tile disappears on a light one.
+    Avoid: a bold C with a coloured element in its mouth. However the palette
+    is changed, that is structurally the Commodore mark.
 
     Keep double hyphens out of this comment; they make the file invalid XML.
   -->
-  <rect x="3" y="3" width="58" height="58" rx="13" fill="#1b3a6b"/>
-  <path d="M 41.5 18 A 19 19 0 1 0 41.5 46" stroke="#f4f6f9" stroke-width="12"
-        fill="none" stroke-linecap="round"/>
-  <circle cx="49" cy="32" r="5.5" fill="#e65300"/>
+  <rect width="64" height="64" rx="14" fill="#1b3a6b"/>
+  <rect x="19" y="9" width="26" height="46" rx="8" fill="#f4f6f9"/>
+  <g fill="none" stroke="#1b3a6b" stroke-width="4.5">
+    <circle cx="32" cy="25" r="5"/>
+    <circle cx="32" cy="38" r="6.5"/>
+  </g>
+  <path d="M 9 25 L 9 39 L 16 32 Z" fill="#e65300"/>
+  <path d="M 55 25 L 55 39 L 48 32 Z" fill="#e65300"/>
 </svg>
