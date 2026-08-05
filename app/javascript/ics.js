@@ -2,6 +2,8 @@
 // never a hosted subscription URL — the schedule must not pass through the
 // server. Deterministic UIDs per pen so a re-export replaces cleanly.
 
+import { t, clicks } from "i18n";
+
 function pad(n) { return String(n).padStart(2, "0"); }
 
 function icsDate(d) {
@@ -47,11 +49,10 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel)
   // a 12 U dose is 6 clicks, and a user dialling until the window reads 6
   // would take half their dose. This text is read months later, in a calendar,
   // without the app open — it has to stand alone.
-  const summary = escapeText(
-    pen.counterStyle === "progress"
-      ? `Dose day — ${pen.name}: dial ${doseClicks} clicks (≈ ${doseUnitsLabel}) — the window shows no number, your click count is the dose`
-      : `Dose day — ${pen.name}: dial ${doseClicks} clicks — the counter will show ${doseUnitsLabel}`
-  );
+  const summary = escapeText(t(
+    pen.counterStyle === "progress" ? "ics.summary_progress" : "ics.summary_numeric",
+    { name: pen.name, clicks: clicks(doseClicks), units: doseUnitsLabel }
+  ));
   lines.push("BEGIN:VEVENT", `UID:counta-${penId}-dose@counta.click`, `DTSTAMP:${stamp}`);
   if (wholeDays) {
     lines.push(
@@ -67,7 +68,7 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel)
     );
   }
   lines.push(`SUMMARY:${summary}`,
-    "DESCRIPTION:Exported from counta.click. counta counts clicks\\; it isn't medical advice.",
+    `DESCRIPTION:${escapeText(t("ics.description"))}`,
     "END:VEVENT");
 
   // "Buy more" lands ~2 doses before run-out (or on the last dose for tiny remainders).
@@ -79,7 +80,7 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel)
     `UID:counta-${penId}-refill@counta.click`,
     `DTSTAMP:${stamp}`,
     `DTSTART;VALUE=DATE:${icsDate(refill)}`,
-    `SUMMARY:${escapeText(`Buy more ${pen.name} — current pen almost finished`)}`,
+    `SUMMARY:${escapeText(t("ics.refill", { name: pen.name }))}`,
     "END:VEVENT",
     "END:VCALENDAR"
   );

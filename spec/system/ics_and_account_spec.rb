@@ -27,7 +27,7 @@ RSpec.describe "ICS export and account panel", type: :system do
     expect(ics).to include("Dose day — Wegovy: dial 8 clicks (≈ 0.26 mg)")
     expect(ics).to include("the window shows no number")
     expect(ics).not_to include("counter will show")
-    expect(ics).to include("isn't medical advice")
+    expect(ics).to include("isn’t medical advice")
     expect(ics).to include("Buy more Wegovy")
 
     # The schedule never touched the server: nothing about it is queryable.

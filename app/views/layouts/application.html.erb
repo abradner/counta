@@ -23,7 +23,10 @@
     <%= javascript_importmap_tags %>
   </head>
 
-  <body>
+  <%# Client-side copy travels as a data attribute, not an inline <script>:
+      the CSP has no 'unsafe-inline', and it must be present before first
+      render so a fetch won't do. See app/javascript/i18n.js. %>
+  <body data-i18n="<%= I18n.t('client').to_json %>">
     <%= yield %>
   </body>
 </html>
