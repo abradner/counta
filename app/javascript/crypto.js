@@ -112,7 +112,11 @@ const PAD_BUCKET = 4096;
 
 function padded(json) {
   const size = te.encode(json).length;
-  const target = Math.ceil((size + 1) / PAD_BUCKET) * PAD_BUCKET;
+  // No +1 here: a payload that already lands exactly on a bucket boundary is
+  // padded to itself. Rounding up from size+1 would push it into the next
+  // bucket for no benefit — the size is already bucket-aligned, so it reveals
+  // nothing either way.
+  const target = Math.ceil(size / PAD_BUCKET) * PAD_BUCKET;
   return json + " ".repeat(target - size);
 }
 

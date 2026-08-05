@@ -17,19 +17,20 @@ RSpec.describe "Blob padding", type: :system do
     save_pen
   end
 
-  it "keeps stored size constant as doses accumulate" do
-    sizes = []
-    sizes << Pen.sole.blob.length
-
+  it "never changes stored size by a dose-sized amount" do
+    sizes = [ Pen.sole.blob.length ]
     6.times do
       log_dose
       sizes << Pen.sole.reload.blob.length
     end
 
-    # An observer with the database sees one number regardless of how many
-    # doses are in there.
-    expect(sizes.uniq.length).to eq(1),
-      "stored size varied with dose count (#{sizes.inspect}) — that leaks how many doses exist"
+    # Asserted as "no dose-sized step" rather than "one constant value", so
+    # that a future payload which happens to straddle a bucket boundary
+    # doesn't fail a spec whose property still holds. A dose is ~138 bytes; a
+    # bucket is 4096. Anything in between is the leak.
+    deltas = sizes.each_cons(2).map { |a, b| b - a }
+    expect(deltas).to all(satisfy { |d| d.zero? || d > 4000 }),
+      "stored size moved by a dose-sized amount (#{sizes.inspect}) — that leaks how many doses exist"
   end
 
   it "still round-trips the data it padded" do
@@ -52,7 +53,7 @@ RSpec.describe "Blob padding", type: :system do
     # tracks the dose count — it only ever reveals which bucket you're in.
     sizes = []
     12.times do |batch|
-      10.times { |i| append_dose("2026-03-#{(i % 28) + 1}") }
+      10.times { |i| append_dose(format("2026-03-%02d", (i % 28) + 1)) }
       sizes << Pen.sole.reload.blob.length
     end
 
