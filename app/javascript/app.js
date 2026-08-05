@@ -142,7 +142,7 @@ function fillSetupForm(key) {
   const cap = $("f-capacity");
   cap.innerHTML = "";
   if (p.capacity_label) cap.append(new Option(p.capacity_label, "0"));
-  cap.append(new Option("Custom…", "custom"));
+  cap.append(new Option(t("setup.capacity_custom"), "custom"));
   cap.value = p.capacity_label ? "0" : "custom";
   $("custom-cap-wrap").hidden = cap.value !== "custom";
   $("f-clicks").value = p.total_clicks ?? "";
@@ -569,8 +569,11 @@ async function doRecover() {
     announce(t("status.recovered"));
   } catch (e) {
     console.error(e);
-    showError("rec-error", new Error(
-      t(e.status === 401 ? "errors.recovery_mismatch" : "errors.generic")));
+    // Kit-entry mistakes (wrong word count, unknown word, bad checksum) are
+    // raised locally before any request, so they carry no status — and their
+    // messages are the only actionable feedback available. Keep them.
+    showError("rec-error", e.status === undefined ? e
+      : new Error(t(e.status === 401 ? "errors.recovery_mismatch" : "errors.generic")));
   }
 }
 

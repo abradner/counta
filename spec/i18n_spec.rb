@@ -7,9 +7,30 @@ RSpec.describe "Copy and localisation" do
   JS_DIR = Rails.root.join("app/javascript")
   VIEW_DIR = Rails.root.join("app/views")
 
-  # Keys the JS asks for, harvested from t("…") / tNodes("…") calls.
+  # The wordmark is a brand name, not copy — it reads "counta.click" in every
+  # language. Anything else appearing here should be justified in the same
+  # breath as it's added.
+  ALLOWED_LITERALS = [ "counta", ".click", "counta .click" ].freeze
+
+  # Keys the JS asks for. Harvesting only `t("literal")` would miss the
+  # conditional calls — t(flag ? "status.pen_archived" : "status.pen_unarchived")
+  # — so this takes every dotted string literal in the client code and treats
+  # it as a key. A literal that merely looks like one (e.g. a filename) would
+  # be a false positive; there are none today, and a false positive is a
+  # cheaper failure than a missing key rendering as raw text at runtime.
+  KEY_SHAPED = /"([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)"/
+
+  # ...restricted to literals whose first segment is an actual client
+  # namespace, so unrelated dotted strings (counta.click in the ICS UIDs) don't
+  # register as missing keys. Self-maintaining: add a namespace to the locale
+  # file and it's covered.
   def js_keys
-    Dir[JS_DIR.join("*.js")].flat_map { |f| File.read(f).scan(/\bt(?:Nodes)?\(\s*"([\w.]+)"/) }.flatten.uniq
+    namespaces = I18n.t("client").keys.map(&:to_s)
+    Dir[JS_DIR.join("*.js")]
+      .reject { |f| f.end_with?("i18n.js", "wordlist.js") }
+      .flat_map { |f| File.read(f).scan(KEY_SHAPED) }
+      .flatten.uniq
+      .select { |key| namespaces.include?(key.split(".").first) }
   end
 
   it "resolves every key the client asks for" do
@@ -28,17 +49,23 @@ RSpec.describe "Copy and localisation" do
   end
 
   it "has no user-facing copy left hardcoded in the views" do
-    offenders = Dir[VIEW_DIR.join("**/*.erb")].flat_map do |file|
-      next [] if file.end_with?("_pen_svg.html.erb") # SVG labels are set by JS
+    offenders = Dir[VIEW_DIR.join("**/*.html.erb")].flat_map do |file|
+      # Only HTML templates: the PWA manifest is structured data, and the pen
+      # SVG's labels are written by JS from locale keys.
+      next [] if file.end_with?("_pen_svg.html.erb")
 
       # Blank out ERB spans first — including multi-line comments — keeping
       # newlines so reported line numbers still point at the real line.
       source = File.read(file).gsub(/<%.*?%>/m) { |span| "\n" * span.count("\n") }
 
       source.lines.each_with_index.filter_map do |line, i|
-        # Text content of two 3+ letter words that isn't a tag or entity.
+        # ANY word of 3+ letters, not just a pair: a hardcoded "Cancel" or
+        # "Continue" is exactly as untranslatable as a hardcoded sentence, and
+        # the two-word rule couldn't see them.
         text = line.gsub(/<[^>]*>/, " ").gsub(/&\w+;/, " ").strip
-        "#{File.basename(file)}:#{i + 1}: #{text}" if text =~ /[A-Za-z]{3,}\s+[A-Za-z]{3,}/
+        next if text.empty? || ALLOWED_LITERALS.include?(text)
+
+        "#{File.basename(file)}:#{i + 1}: #{text}" if text =~ /[A-Za-z]{3,}/
       end
     end
 

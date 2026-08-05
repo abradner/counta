@@ -241,6 +241,7 @@ en:
     product_other: Something else…
 
     setup:
+      capacity_custom: Custom…
       total_clicks_hint_preset: >-
         Pre-filled: %{clicks} clicks (%{name} %{capacity}). Override for a
         custom pen.
