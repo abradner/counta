@@ -1,4 +1,4 @@
-# Captures the screenshots used in README.md and docs/reviewers-guide.md, by
+# Captures the screenshots used in README.md and docs/ui-tour.md, by
 # driving the real app rather than mocking anything — so the images can't
 # drift from what the app actually renders.
 #

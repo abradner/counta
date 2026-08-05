@@ -55,6 +55,16 @@ change that found the disagreement.
   the link lives only inside encrypted pen blobs, client-side. Adding any account linkage (even
   "just for debugging") destroys the recall registry's unlinkability guarantee
   (`spec/models/structural_privacy_spec.rb` pins this).
+- **CSP is not a containment boundary.** It raises the bar for getting script to run;
+  `connect-src 'self'` blocks the obvious `fetch()` exfiltration path but does **not** stop
+  top-level navigation carrying data in a URL (`navigate-to` was never shipped). One XSS is still
+  total compromise here — treat the CSP as defence in depth on top of escaping every interpolated
+  value, never as a reason to relax the escaping. Note the nonce is per-request random: a
+  session-derived nonce is empty before a session exists and silently blocks all JS.
+- **WebAuthn user verification is enforced server-side**, via `user_verification: true` on both
+  `verify` calls. webauthn-ruby only checks the UV flag when asked, so requesting
+  `userVerification: "required"` in the options proves nothing — the client is the attacker's. A
+  passkey is the only factor here, so this is the whole of authentication.
 
 ## Cross-cutting flows
 

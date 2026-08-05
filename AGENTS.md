@@ -107,7 +107,18 @@ supersedes the earlier server-side-encryption phrasing; server-side `encrypts`/p
 keys where the design promises they never go). Plaintext columns are limited to the data map's
 enumerated list.
 
-## 5. Repository Map
+## 5. Docs Map
+
+Four docs, each with a distinct job. Keep them that way — a doc that drifts into
+another's territory is how two of them end up disagreeing:
+
+| Doc | Job |
+|---|---|
+| `docs/data-privacy.md` | **Authority** for the data and crypto design: the data map, threat model, retention policy. Items marked `[decided]` are settled; amend in place with a reason rather than re-litigating. |
+| `docs/design-notes.md` | **Authority** for UI/UX decisions: dose entry, counter-style copy, the pen graphic. Also holds the standing **anti-roadmap** — the features counta deliberately won't grow. |
+| `docs/architecture.md` | *Why the code implements those decisions the way it does* — the reversal-expensive choices and the code that looks odd without its constraint. Explains, never decides. |
+| `docs/repo-map.md` | Surfaces, trust boundaries, cross-cutting flows, risk register. |
+| `docs/ui-tour.md` | Screen-by-screen walkthrough with generated screenshots. |
 
 `docs/repo-map.md` is the living boundary map: surfaces, trust boundaries, cross-cutting flows,
 and the risk register. It exists because that knowledge lives *between* files and can't be

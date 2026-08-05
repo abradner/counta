@@ -5,7 +5,7 @@
     counta.click favicon: the dose counter window of a FlexTouch-style pen —
     a rounded aperture with the dialled number, and the dial's pointer notch
     above it. Authored on a 64px grid for legibility at 16px: strokes >= 3px,
-    one numeral only, no gradients. See docs/reviewers-guide.md.
+    one numeral only, no gradients.
     Keep double hyphens out of this comment; they make the file invalid XML.
   -->
   <defs>
