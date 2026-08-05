@@ -90,18 +90,38 @@ function adoptRow(p, row) {
 }
 
 // Union two dose histories. Doses are append-only per pen, so a merge is a
-// union — never a choice between versions. Entries written before dose ids
-// existed fall back to a content signature, which can only collide for two
-// genuinely identical doses on the same date, where dropping one is the safer
-// error than inventing one.
+// union — never a choice between versions.
+//
+// Entries written before dose ids existed have no identity beyond their
+// contents, so two identical doses on the same date share a key. Deduping by
+// key would then silently delete one of them even when BOTH sides agree it
+// happened, so the merge is a multiset: for each key, keep whichever side has
+// more occurrences. That preserves genuine repeats while still collapsing the
+// same dose seen twice.
 function mergeHistory(mine, theirs) {
   const key = e => e.id || `legacy:${e.date}:${e.clicks}`;
-  const merged = new Map();
-  for (const entry of [ ...theirs, ...mine ]) merged.set(key(entry), entry);
-  return byDate([ ...merged.values() ]);
+  const group = list => list.reduce((map, entry) => {
+    const k = key(entry);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(entry);
+    return map;
+  }, new Map());
+
+  const ours = group(mine), theirsByKey = group(theirs);
+  const merged = [];
+  for (const k of new Set([ ...ours.keys(), ...theirsByKey.keys() ])) {
+    const a = ours.get(k) ?? [], b = theirsByKey.get(k) ?? [];
+    merged.push(...(a.length >= b.length ? a : b));
+  }
+  return byDate(merged);
 }
 
-async function persistPen(p, { archived = p.archivedAt != null } = {}) {
+async function persistPen(p, opts = {}) {
+  // Whether the CALLER is deciding the archive state matters on retry: an
+  // ordinary dose save must not carry its stale idea of it (see below).
+  const archiveIsIntentional = "archived" in opts;
+  let archived = archiveIsIntentional ? opts.archived : p.archivedAt != null;
+
   if (!p.id) {
     adoptRow(p, await api("/api/pens", {
       method: "POST", body: { blob: await encryptPayload(dek, p.data), archived }
@@ -131,6 +151,9 @@ async function persistPen(p, { archived = p.archivedAt != null } = {}) {
     const theirs = await decryptPayload(dek, e.body.blob);
     p.data.history = mergeHistory(p.data.history || [], theirs.history || []);
     p.updatedAt = e.body.updated_at;
+    // If the other device archived the pen, a dose save must not undo that:
+    // this write never intended to change archive state, so adopt theirs.
+    if (!archiveIsIntentional) archived = e.body.archived_at != null;
     adoptRow(p, await write());
   }
 }
@@ -893,6 +916,23 @@ window.countaTest = {
       expected_updated_at: row.updated_at
     } });
     return data.history.length;
+  },
+  rows: () => api("/api/pens"),
+  decryptRow: row => decryptPayload(dek, row.blob),
+  // Writes a payload as if from another device, at the row's current version.
+  async writeRow(row, data) {
+    const [ current ] = await api("/api/pens");
+    return api(`/api/pens/${current.id}`, { method: "PUT", body: {
+      blob: await encryptPayload(dek, data), archived: current.archived_at != null,
+      expected_updated_at: current.updated_at
+    } });
+  },
+  // Another device archives the pen; this tab's cached state stays stale.
+  async archiveElsewhere() {
+    const [ row ] = await api("/api/pens");
+    return api(`/api/pens/${row.id}`, { method: "PUT", body: {
+      blob: row.blob, archived: true, expected_updated_at: row.updated_at
+    } });
   },
   async historyFromServer() {
     const [ row ] = await api("/api/pens");

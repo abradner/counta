@@ -40,11 +40,16 @@ RSpec.describe "Pens API conflict detection", type: :request do
     expect(pen.reload.blob).to eq("v2")
   end
 
-  it "accepts a write that doesn't claim a version (first write, or a deliberate force)" do
+  # This originally asserted the opposite, which was wrong: creation goes
+  # through POST, so a PUT with no version is a client that predates conflict
+  # detection — and accepting it would leave the old overwrite behaviour
+  # available to exactly the stale tabs this protects against.
+  it "refuses a write that doesn't state the version it was based on" do
     put "/api/pens/#{pen.id}", params: { blob: "v2" }, as: :json
 
-    expect(response).to have_http_status(:ok)
-    expect(pen.reload.blob).to eq("v2")
+    expect(response).to have_http_status(:conflict)
+    expect(pen.reload.blob).to eq("v1")
+    expect(response.parsed_body["updated_at"]).to eq(version_of(pen))
   end
 
   it "compares at the precision it publishes" do

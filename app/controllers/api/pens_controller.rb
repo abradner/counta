@@ -11,8 +11,10 @@ module Api
   # lose one dose, it loses all of them — and the server can't reconstruct
   # anything, because it holds no keys.
   #
-  # `expected_updated_at` is optional, so a first write (or a deliberate
-  # force) still works; when it is absent this is plain last-write-wins.
+  # `expected_updated_at` is REQUIRED on update. Leaving it optional would mean
+  # any older client — including a tab loaded before this shipped — silently
+  # kept the old last-write-wins behaviour, so the guarantee would hold only
+  # for clients that opted into it.
   class PensController < ApplicationController
     before_action :require_account!
 
@@ -51,9 +53,13 @@ module Api
     # Compare at microsecond precision, matching what pen_json serialises —
     # a coarser comparison would silently accept writes based on a version the
     # client never saw.
+    # A PUT always updates an existing row — creation goes through POST — so a
+    # write with no version is a client that predates conflict detection, and
+    # accepting it would reopen exactly the overwrite this exists to stop.
+    # Refuse it, and hand back the current row so the caller can catch up.
     def stale_write?(pen)
       expected = params[:expected_updated_at].presence
-      return false unless expected
+      return true unless expected
 
       expected != pen.updated_at.utc.iso8601(6)
     end

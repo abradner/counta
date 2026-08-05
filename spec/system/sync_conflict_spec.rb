@@ -41,6 +41,52 @@ RSpec.describe "Stale-tab sync", type: :system do
     expect(find("#stats").text).to include((296 - (8 + 8 + 8)).to_s)
   end
 
+  it "keeps both of two identical same-day doses that predate dose ids" do
+    # Legacy entries have no identity beyond their contents, so two identical
+    # doses on one date share a merge key. Deduping by key would delete one
+    # even though both devices agree it happened.
+    page.evaluate_async_script(<<~JS)
+      (async () => {
+        const [row] = await window.countaTest.rows();
+        const data = await window.countaTest.decryptRow(row);
+        data.history = [
+          { date: "2026-01-10", clicks: 8, units: 0.26 },
+          { date: "2026-01-10", clicks: 8, units: 0.26 }
+        ];
+        await window.countaTest.writeRow(row, data);
+      })().then(arguments[0])
+    JS
+
+    # Order matters: this tab must LOAD the legacy history first, and only
+    # then fall behind. Reloading after the other device writes would leave it
+    # current, no conflict would occur, and the merge under test would never
+    # run — which is exactly how the first version of this spec passed with
+    # the merge broken.
+    visit "/"
+    click_button "Unlock with passkey"
+    expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+    page.evaluate_async_script("window.countaTest.simulateOtherDevice('2026-02-01').then(arguments[0])")
+    log_dose # now stale -> conflict -> merge
+
+    history = page.evaluate_async_script("window.countaTest.historyFromServer().then(arguments[0])")
+    same_day = history.select { |h| h["date"] == "2026-01-10" }
+    expect(same_day.length).to eq(2), "a legacy duplicate dose was silently dropped"
+  end
+
+  it "does not clear the archive marker when a stale tab saves a dose" do
+    log_dose
+    # Another device archives the pen while this tab is open.
+    page.evaluate_async_script("window.countaTest.archiveElsewhere().then(arguments[0])")
+    expect(Pen.sole.archived_at).to be_present
+
+    # This tab, which still thinks the pen is active, saves a dose.
+    log_dose
+
+    # The retry must not carry this tab's stale "not archived" idea.
+    expect(Pen.sole.reload.archived_at).to be_present
+  end
+
   it "does not duplicate a dose when the same history is merged twice" do
     log_dose
     page.evaluate_async_script("window.countaTest.simulateOtherDevice('2026-01-15').then(arguments[0])")
