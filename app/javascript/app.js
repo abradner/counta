@@ -148,13 +148,26 @@ async function persistPen(p, opts = {}) {
     // Another device got there first. Merge its history with ours and retry
     // once against the version it wrote — a second conflict means something
     // is writing continuously, and failing loudly beats looping.
-    const theirs = await decryptPayload(dek, e.body.blob);
-    p.data.history = mergeHistory(p.data.history || [], theirs.history || []);
-    p.updatedAt = e.body.updated_at;
-    // If the other device archived the pen, a dose save must not undo that:
-    // this write never intended to change archive state, so adopt theirs.
-    if (!archiveIsIntentional) archived = e.body.archived_at != null;
-    adoptRow(p, await write());
+    //
+    // Snapshot first: if the retry also fails, the caller's rollback runs
+    // against state we've already rewritten, and it would undo the wrong
+    // thing. On failure this leaves the pen exactly as the caller handed it
+    // over, so their rollback means what it says.
+    const snapshot = { history: p.data.history, updatedAt: p.updatedAt, archived };
+    try {
+      const theirs = await decryptPayload(dek, e.body.blob);
+      p.data.history = mergeHistory(p.data.history || [], theirs.history || []);
+      p.updatedAt = e.body.updated_at;
+      // If the other device archived the pen, a dose save must not undo that:
+      // this write never intended to change archive state, so adopt theirs.
+      if (!archiveIsIntentional) archived = e.body.archived_at != null;
+      adoptRow(p, await write());
+    } catch (retryError) {
+      p.data.history = snapshot.history;
+      p.updatedAt = snapshot.updatedAt;
+      archived = snapshot.archived;
+      throw retryError;
+    }
   }
 }
 
@@ -806,7 +819,9 @@ function wire() {
     try {
       await persistPen(activePen);
     } catch (e) {
-      pen().history.pop(); // not saved — don't show it as if it were
+      // Remove THIS dose, not "the last one": a merge sorts by date, so the
+      // entry at the end may be someone else's.
+      pen().history = pen().history.filter(h => h.id !== entry.id);
       alert("Couldn’t save that dose: " + e.message);
       return;
     }

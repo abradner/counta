@@ -34,10 +34,27 @@ module Api
     end
 
     def update
-      pen = current_account.pens.find(params[:id])
-      return render_conflict(pen) if stale_write?(pen)
+      # The compare and the write have to be one atomic step. Checking the
+      # version and then updating leaves a window where two requests based on
+      # the same version both pass the check and the second silently overwrites
+      # a whole dose history — the exact loss this endpoint exists to prevent,
+      # and most likely precisely here, since two clients that just conflicted
+      # retry at almost the same moment. `lock` takes SELECT … FOR UPDATE, so
+      # the second transaction blocks and then sees the committed new version.
+      pen = nil
+      conflicted = false
 
-      pen.update!(pen_params)
+      current_account.pens.transaction do
+        pen = current_account.pens.lock.find(params[:id])
+        if stale_write?(pen)
+          conflicted = true
+        else
+          pen.update!(pen_params)
+        end
+      end
+
+      return render_conflict(pen) if conflicted
+
       touch_account_activity
       render json: pen_json(pen)
     end
