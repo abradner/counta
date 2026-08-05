@@ -161,7 +161,10 @@ sibling projects, toolchain path issues, platform limitations.)
 3. **No chromedriver exists for linux-arm64** (this dev box is a Raspberry Pi) → system specs use
    Cuprite/Ferrum, which drives Chromium over raw CDP — which is also how the WebAuthn virtual
    authenticator (PRF) is injected. Don't add selenium-webdriver.
-4. **Headless Chromium can't keystroke `<input type=month>`** (locale-formatted typing) → set the
+4. **`bundle exec rspec | tail` hides failures** — a pipeline's exit status is the last command's,
+   so `rspec | grep … && git commit` will happily commit over a red suite. Bitten twice in one
+   session. Read the "N examples, M failures" count; don't rely on `&&`.
+5. **Headless Chromium can't keystroke `<input type=month>`** (locale-formatted typing) → set the
    value via JS and dispatch a `change` event; see `save_pen` in `spec/support/counta_flows.rb`.
 
 ## 7. CI & Deployment
@@ -232,6 +235,21 @@ projects; adjust only with reason, and record the reason (see §10).
 - **Prove a new test can fail.** For any bug fix: write the regression test, confirm it passes
   with the fix, revert just the fix, confirm the test fails for the right reason, restore the fix.
   A test that was never seen to fail hasn't proven anything.
+  - This is the single highest-yield habit in this repo — it has caught a hollow test *five*
+    times, and every time the test looked convincing first. Budget for it; it costs a minute.
+  - **A revert that doesn't fail doesn't mean the test is good — diagnose which of these it is:**
+    1. **Two independent guards.** Reverting one leaves the other covering it, so the spec still
+       passes. Revert *all* of them, or the proof is vacuous (§9.10).
+    2. **The spec never reaches the mechanism.** Ordering or setup means the code under test
+       doesn't run at all — a stale-tab merge spec that reloads first is never stale; a retention
+       spec that opens a pen never saves it (§9.8, §9.10).
+    3. **The lever is a no-op.** The thing you changed to reproduce the failure doesn't affect
+       the output — Chromium's `--lang` versus `Intl` (§9.9). Confirm the lever moves the output
+       *before* concluding anything from it.
+    4. **False positives are masking real ones.** A check that flags noise gets tuned until it's
+       quiet, and the tuning hides the signal. Look at what a guard *stops* flagging.
+    5. **A sequential test can't see a concurrent defect.** Races need real threads on separate
+       connections; a single-threaded spec passes regardless (`spec/models/pen_concurrent_write_spec.rb`).
 - Ask what else satisfies your assertion — a count-based check that an empty-state row also
   matches, a visibility check that passes for a scrolled-away element. When asserting absence,
   include a positive control so a broken probe can't read as success.
@@ -336,6 +354,16 @@ test lives** (if one exists).
    `--lang` and "passed", which proved nothing: when fixing an environment-dependent test, first
    confirm the lever you're pulling actually changes the output (`spec/support/system.rb`,
    `spec/system/multi_pen_and_archive_spec.rb`).
+
+10. Three regression specs in one session passed with their fix deliberately removed, each for a
+    different reason: the custom-pen dose bug had **two independent guards** (storage and clamp),
+    so reverting either alone left the other covering it; the stale-tab merge spec **reloaded the
+    page before the conflicting write**, leaving the tab current so the merge never ran at all;
+    and the copy guard's **false positives had been tuned away** in a manner that also silenced
+    the real ones → the general rule: when a revert doesn't produce a failure, that is a finding
+    about the *test*, not a licence to move on. Work out which shape it is (§8 lists them) before
+    trusting the spec → `spec/system/pen_flow_spec.rb`, `spec/system/sync_conflict_spec.rb`,
+    `spec/i18n_spec.rb`.
 
 ## 10. Maintaining This Document
 
