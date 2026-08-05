@@ -15,8 +15,12 @@ RSpec.describe "Pens API archiving", type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  # Writes state the version they were based on, exactly as the client does —
+  # a PUT without one is refused now (issue #2).
   def put_pen(**params)
-    put "/api/pens/#{pen.id}", params: { blob: "ciphertext", **params }, as: :json
+    put "/api/pens/#{pen.id}",
+        params: { blob: "ciphertext", expected_updated_at: pen.reload.updated_at.utc.iso8601(6), **params },
+        as: :json
     expect(response).to have_http_status(:ok)
     response.parsed_body
   end

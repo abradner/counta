@@ -59,8 +59,9 @@ change that found the disagreement.
 ## Cross-cutting flows
 
 - **Logging a dose:** UI → `history` appended inside the decrypted pen data → whole blob
-  re-encrypted client-side → `PUT /api/pens/:id` (owner-scoped) → server overwrites ciphertext
-  (last-write-wins; `updated_at` is the tiebreaker). Dose events never exist as rows — a blob per
+  re-encrypted client-side → `PUT /api/pens/:id` (owner-scoped, carrying the `updated_at` the
+  write was based on) → server accepts, or returns 409 with the winning row if another device
+  wrote first, in which case the client merges the two dose histories by dose id and retries once. Dose events never exist as rows — a blob per
   pen so row counts can't reconstruct dosing rhythm. A change that "normalises" doses into rows
   breaks this on purpose-chosen property.
 - **Losing/regaining access:** passkey assertion (PRF) and recovery kit are two independent wraps

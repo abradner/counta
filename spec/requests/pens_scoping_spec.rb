@@ -43,7 +43,9 @@ RSpec.describe "Pens API owner scoping", type: :request do
     get "/api/pens"
     expect(response.parsed_body.map { |p| p["id"] }).to eq([ pen_a.id ])
 
-    put "/api/pens/#{pen_a.id}", params: { blob: "updated-ciphertext" }, as: :json
+    put "/api/pens/#{pen_a.id}",
+        params: { blob: "updated-ciphertext",
+                  expected_updated_at: pen_a.reload.updated_at.utc.iso8601(6) }, as: :json
     expect(response).to have_http_status(:ok)
     expect(pen_a.reload.blob).to eq("updated-ciphertext")
   end

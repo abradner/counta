@@ -3,13 +3,18 @@ module Api
   # never Pen.find — so one account's pens are structurally invisible to
   # another (AGENTS.md §4.1, R-001).
   #
-  # Sync is last-write-wins with NO conflict detection: a PUT overwrites
-  # unconditionally, and nothing compares versions. `updated_at` is returned
-  # for the client's information only — it is not sent back on write and not
-  # checked here. Because the blob is a pen's entire dose log, a stale client
-  # overwrites the whole history, and the server cannot help because it holds
-  # no keys. Tracked in issue #2; do not describe this as protected until
-  # optimistic concurrency actually lands.
+  # Sync uses optimistic concurrency. A write may carry the `updated_at` the
+  # client based it on; if the stored row has moved on since, the write is
+  # rejected with 409 and the current row is returned so the client can merge
+  # and retry. This matters more here than in most apps: the blob is a pen's
+  # ENTIRE dose log, so an unconditional overwrite from a stale tab doesn't
+  # lose one dose, it loses all of them — and the server can't reconstruct
+  # anything, because it holds no keys.
+  #
+  # `expected_updated_at` is REQUIRED on update. Leaving it optional would mean
+  # any older client — including a tab loaded before this shipped — silently
+  # kept the old last-write-wins behaviour, so the guarantee would hold only
+  # for clients that opted into it.
   class PensController < ApplicationController
     before_action :require_account!
 
@@ -29,8 +34,27 @@ module Api
     end
 
     def update
-      pen = current_account.pens.find(params[:id])
-      pen.update!(pen_params)
+      # The compare and the write have to be one atomic step. Checking the
+      # version and then updating leaves a window where two requests based on
+      # the same version both pass the check and the second silently overwrites
+      # a whole dose history — the exact loss this endpoint exists to prevent,
+      # and most likely precisely here, since two clients that just conflicted
+      # retry at almost the same moment. `lock` takes SELECT … FOR UPDATE, so
+      # the second transaction blocks and then sees the committed new version.
+      pen = nil
+      conflicted = false
+
+      current_account.pens.transaction do
+        pen = current_account.pens.lock.find(params[:id])
+        if stale_write?(pen)
+          conflicted = true
+        else
+          pen.update!(pen_params)
+        end
+      end
+
+      return render_conflict(pen) if conflicted
+
       touch_account_activity
       render json: pen_json(pen)
     end
@@ -42,6 +66,26 @@ module Api
     end
 
     private
+
+    # Compare at microsecond precision, matching what pen_json serialises —
+    # a coarser comparison would silently accept writes based on a version the
+    # client never saw.
+    # A PUT always updates an existing row — creation goes through POST — so a
+    # write with no version is a client that predates conflict detection, and
+    # accepting it would reopen exactly the overwrite this exists to stop.
+    # Refuse it, and hand back the current row so the caller can catch up.
+    def stale_write?(pen)
+      expected = params[:expected_updated_at].presence
+      return true unless expected
+
+      expected != pen.updated_at.utc.iso8601(6)
+    end
+
+    # 409 carries the winning row, so the client can merge against what's
+    # actually stored rather than guessing or refetching in a second round trip.
+    def render_conflict(pen)
+      render json: pen_json(pen), status: :conflict
+    end
 
     # The client sends the archive *intent*; the server stamps the time. Dates
     # and deadlines are never calculated client-side (AGENTS.md §9.6).

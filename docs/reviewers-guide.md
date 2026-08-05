@@ -70,11 +70,13 @@ number of rows and their spacing reconstructs someone's dosing rhythm even if
 every field is encrypted. A blob per pen makes logging a dose indistinguishable
 from any other write.
 
-**The cost, stated honestly:** last-write-wins sync with no conflict detection.
-Because the blob *is* the whole dose log, a stale second device can overwrite
-history, and the server can't help — it has no keys. This is filed as an issue,
-not solved here; the controller comment that claimed `updated_at` was a
-tiebreaker was wrong (the client never read it) and has been corrected.
+**The cost, and how it's paid:** a write carries a pen's whole dose log, so a
+stale second device would overwrite all of it — and the server can't help,
+having no keys. Writes therefore state the version they were based on; the
+server rejects a superseded write with 409 and returns the winning row, and the
+client merges the two histories by dose id before retrying once. Doses carry a
+stable id for exactly that reason: two identical doses on the same day are
+otherwise indistinguishable from the same dose seen twice.
 
 A related leak survives: ciphertext length grows with the number of doses, so
 blob size approximates a dose count. Padding is the fix and is filed.
