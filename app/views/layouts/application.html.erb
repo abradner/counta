@@ -15,9 +15,12 @@
 
     <%= yield :head %>
 
-    <link rel="icon" href="/icon.png" type="image/png">
+    <%# public/icon.svg is canonical; the PNGs are rendered from it by
+        `rake icons:render`. iOS can't use an SVG for apple-touch-icon, which
+        is why the rasters exist at all — and it wants 180px specifically. %>
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="/icon.png">
+    <link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" sizes="180x180">
 
     <%= stylesheet_link_tag :app %>
     <%= javascript_importmap_tags %>

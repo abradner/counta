@@ -1,0 +1,9 @@
+{
+  "source": "f96af884bd403ca093f3cc0351275715d7f3692e80aadeda935891abde7f8eb4",
+  "artifacts": {
+    "public/icon.png": "d9d3ab53fa66da88aa7bd594076633e8a6f56decc44c76126a5078c7413974ef",
+    "public/icons/icon-192.png": "945c9e4b96eb4bf9a9e7f123b4c7c0532b078f477cc461114d1cd1cf6e0bfa41",
+    "public/icons/icon-180.png": "fece0610727b1c04c91320c84cc4dd8fb911b503ba9d92e54708ac6ec4863a8d",
+    "public/icons/icon-32.png": "a56e849333f59186c66b31b98a28c51632fc543da01fef1eaaf735f6b193e61f"
+  }
+}
