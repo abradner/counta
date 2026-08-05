@@ -98,9 +98,27 @@ async function dekCryptoKey(dekBytes, usage) {
   return crypto.subtle.importKey("raw", dekBytes, "AES-GCM", false, [usage]);
 }
 
+// Pen blobs are padded to a fixed bucket before encryption. AES-GCM ciphertext
+// is plaintext length + 16, and a pen's payload grows by roughly one JSON
+// entry per dose — so without padding, `blob_length` estimates how many doses
+// someone has logged. That is the very inference the blob-per-pen design
+// exists to prevent (docs/data-privacy.md "Data map"), and it's readable from
+// a database dump without touching a key.
+//
+// Padding is trailing whitespace inside the JSON text, which JSON.parse
+// ignores. That keeps it backward compatible: blobs written before this still
+// decrypt, and nothing needs migrating.
+const PAD_BUCKET = 4096;
+
+function padded(json) {
+  const size = te.encode(json).length;
+  const target = Math.ceil((size + 1) / PAD_BUCKET) * PAD_BUCKET;
+  return json + " ".repeat(target - size);
+}
+
 export async function encryptPayload(dekBytes, obj) {
   const key = await dekCryptoKey(dekBytes, "encrypt");
-  return aesGcmEncrypt(key, te.encode(JSON.stringify(obj)));
+  return aesGcmEncrypt(key, te.encode(padded(JSON.stringify(obj))));
 }
 
 export async function decryptPayload(dekBytes, blob) {
