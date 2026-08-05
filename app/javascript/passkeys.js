@@ -4,11 +4,12 @@
 // (docs/data-privacy.md "Crypto design").
 
 import { PRF_SALT, b64u, b64uDecode } from "crypto";
+import { t } from "i18n";
 import { api } from "api";
 
 export class PrfUnsupportedError extends Error {
   constructor() {
-    super("This passkey doesn't support the PRF extension counta needs for encryption.");
+    super(t("errors.prf_unsupported"));
     this.name = "PrfUnsupportedError";
   }
 }

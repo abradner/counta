@@ -9,6 +9,7 @@
 // proof, and blob ciphertext (docs/data-privacy.md "Crypto design").
 
 import { WORDLIST } from "wordlist";
+import { t } from "i18n";
 
 const te = new TextEncoder();
 
@@ -142,11 +143,11 @@ export async function masterKeyToWords(masterKey) {
 
 export async function wordsToMasterKey(words) {
   const list = words.map(w => w.trim().toLowerCase()).filter(Boolean);
-  if (list.length !== 24) throw new Error("A recovery kit has exactly 24 words.");
+  if (list.length !== 24) throw new Error(t("errors.kit_words_count"));
   const bits = [];
   for (const word of list) {
     const idx = WORDLIST.indexOf(word);
-    if (idx < 0) throw new Error(`"${word}" is not a recovery-kit word.`);
+    if (idx < 0) throw new Error(t("errors.kit_words_unknown", { word }));
     for (let b = 10; b >= 0; b--) bits.push((idx >> b) & 1);
   }
   const entropy = new Uint8Array(32);
@@ -155,7 +156,7 @@ export async function wordsToMasterKey(words) {
   let checksum = 0;
   for (let i = 256; i < 264; i++) checksum = (checksum << 1) | bits[i];
   if (checksum !== digest[0]) {
-    throw new Error("Checksum doesn't match — one or more words are wrong or out of order.");
+    throw new Error(t("errors.kit_words_checksum"));
   }
   return entropy;
 }

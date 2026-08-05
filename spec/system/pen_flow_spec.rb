@@ -61,13 +61,14 @@ RSpec.describe "Pen setup and dosing", type: :system do
     # Expires end of this month: 37 remaining doses at 7-day spacing can't fit.
     save_pen(expiry: Date.current.strftime("%Y-%m"))
 
-    expect(find("#warnings").text).to include("before expiry")
+    expect(find("#warnings").text).to include("fit before this pen expires")
   end
 
   it "flags an expired pen" do
     select "Wegovy 2.4 mg (4 doses · 9.6 mg · 3 mL)", from: "f-product"
     save_pen(expiry: "2024-01")
-    expect(find("#warnings").text).to include("expired 01/2024")
+    # Month names are localised now, not MM/YYYY (ambiguous across locales).
+    expect(find("#warnings").text).to include("expired Jan 2024")
   end
 
   it "trashes a pen from the edit screen and returns to setup" do

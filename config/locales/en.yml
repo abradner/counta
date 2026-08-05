@@ -1,31 +1,355 @@
-# Files in the config/locales directory are used for internationalization and
-# are automatically loaded by Rails. If you want to use locales other than
-# English, add the necessary files in this directory.
+# All user-facing copy lives here — nothing hardcoded in a view or in JS.
 #
-# To use the locales, use `I18n.t`:
+# Two namespaces:
+#   ui.*     rendered server-side by ERB via t()
+#   client.* serialised into the page and used by app/javascript/i18n.js
 #
-#     I18n.t "hello"
+# House style (docs/design-notes.md "Tone"):
+#   - Descriptive, never prescriptive. counta reports what a dial position
+#     corresponds to; it never tells anyone what to take. "counter will show…",
+#     never "you should take…".
+#   - Say what is true of the mechanism as built. If a feature isn't wired up,
+#     the copy says so rather than implying it works (AGENTS.md principle 1).
+#   - "counta" is the product; "counta.click" is the service that stores the
+#     ciphertext. Use the latter for anything about what the server can or
+#     can't see.
+#   - Typographic apostrophes (’) throughout.
 #
-# In views, this is aliased to just `t`:
-#
-#     <%= t("hello") %>
-#
-# To use a different locale, set it with `I18n.locale`:
-#
-#     I18n.locale = :es
-#
-# This would use the information in config/locales/es.yml.
-#
-# To learn more about the API, please read the Rails Internationalization guide
-# at https://guides.rubyonrails.org/i18n.html.
-#
-# Be aware that YAML interprets the following case-insensitive strings as
-# booleans: `true`, `false`, `on`, `off`, `yes`, `no`. Therefore, these strings
-# must be quoted to be interpreted as strings. For example:
-#
-#     en:
-#       "yes": yup
-#       enabled: "ON"
-
+# Pluralisation: use `count:` with one/other. Never build a plural by
+# concatenating an "s" — many languages need more than two forms, and that was
+# the most common localisation blocker in the original copy.
 en:
-  hello: "Hello world"
+  ui:
+    # Accessible name of the pen graphic, announced by screen readers.
+    pen_svg_title: Your pen, live view
+
+    header:
+      pens: Your pens
+      account: Account and data
+
+    landing:
+      title: Count pen clicks, privately
+      body: >-
+        counta keeps a click and dose tally for measured-dose pens. Your pen and
+        dose data is encrypted on your device with keys held by your passkeys —
+        counta.click can never read it.
+      create: Create account
+      sign_in: Sign in with passkey
+      recover: Recover with a saved kit
+      push_note: >-
+        counta doesn’t send push notifications yet. When it does, this is where
+        you’ll be able to clear everything this browser registered, without an
+        account.
+      push_check: Check for push data
+
+    unlock:
+      title: Unlock your data
+      body: >-
+        Your data is encrypted; your passkey holds the key. Unlocking runs a
+        passkey check on this device.
+      submit: Unlock with passkey
+      sign_out: Sign out
+
+    recovery:
+      title: Recover with your kit
+      body: >-
+        Enter the account ID and the 24 words from your recovery kit, or load
+        the kit file.
+      file: Kit file
+      account_id: Account ID
+      account_id_placeholder: xxxxxxxx-xxxx-…
+      words: 24 words
+      submit: Recover
+      back: Back
+
+    setup:
+      title: Set up this pen
+      why: Why we ask for batch and expiry
+      product: Product
+      product_other: Something else…
+      custom_name: Product name
+      custom_name_placeholder: e.g. Ozempic 1 mg
+      counter_style: Your pen’s dose counter
+      counter_style_progress: Doesn’t show a readable number
+      counter_style_numeric: Shows the dose as a number
+      counter_style_hint: >-
+        If you’re not sure, leave this as-is — counta will just count clicks and
+        won’t tell you to dial to a number.
+      capacity: Pen capacity
+      capacity_custom: Custom…
+      capacity_units: Total medicine
+      capacity_unit_name: Unit
+      total_clicks: Total clicks in the pen
+      total_clicks_hint: Pre-filled for this pen. Override it if your pen is different.
+      batch: Batch no.
+      expiry: Expiry
+      frequency: Dose frequency
+      frequency_weekly: Every 7 days (weekly)
+      frequency_daily: Every day
+      frequency_twice_weekly: Twice a week
+      frequency_fortnightly: Every 14 days
+      save: Save pen
+      cancel: Cancel
+      archive: Archive this pen
+      trash: Trash this pen
+
+    dose:
+      title: Your dose
+      units_group: Dose units
+      clicks: clicks
+      common_doses: Common doses
+      less: One click less
+      more: One click more
+      amount: Dose amount
+      date: Date of dose
+      recent: Recent doses
+      export: Add dose reminders to calendar
+      edit: Edit this pen’s data
+      archive: Archive this pen
+      unarchive: Unarchive this pen
+      trash: Trash this pen
+
+    account:
+      title: Account & data
+      account_id: "Account ID:"
+      archived_pens: Archived pens
+      passkeys: Passkeys
+      add_passkey_hint: >-
+        Adding a passkey wraps your data key for the new passkey on this device
+        — it only works while unlocked.
+      add_passkey: Add a passkey
+      recovery_kit: Recovery kit
+      recovery_kit_status: >-
+        A recovery kit was created with this account. If you lose every passkey,
+        the kit is the only way back in.
+      danger: Danger zone
+      delete: Delete account & all data
+      back: Back to pens
+      sign_out: Sign out
+
+    footer:
+      privacy: Your pen and dose data is end-to-end encrypted — counta.click can’t read it.
+      disclaimer: counta helps you count clicks; it isn’t medical advice.
+
+    disclaimer:
+      title: Before you start
+      lead_html: >-
+        <strong>counta counts clicks; it isn’t medical advice.</strong> It shows
+        what a dial position corresponds to — it never tells you what to take.
+      data: >-
+        How your data works: your account is an anonymous ID — no email, no
+        name. Pen and dose details are encrypted on your device; the keys live
+        in your passkeys and recovery kit. counta.click can’t read your data,
+        and also can’t reset access you lose.
+      accept: I understand — continue
+      cancel: Not now
+
+    prf:
+      title: That passkey can’t be used here
+      body: >-
+        counta encrypts your data with a key derived from your passkey, which
+        needs the PRF feature. The passkey you just tried doesn’t offer it. A
+        platform passkey — Face ID / Touch ID, Windows Hello, or Android screen
+        lock — on a current OS usually does. Security keys vary.
+      retry: Try a different passkey
+      cancel: Cancel
+
+    gesture:
+      title: One more passkey check
+      body: >-
+        Your browser needs another tap before it lets counta finish setting up
+        encryption with the new passkey.
+      continue: Continue
+
+    kit:
+      title: Your recovery kit — shown once
+      warning_html: >-
+        <strong>If you lose every passkey and this kit, your data is gone.</strong>
+        No one — including counta.click — can recover it. That’s the design that
+        keeps it private.
+      download: Download kit file
+      download_hint: >-
+        Keep the file somewhere safe outside this device — a password manager
+        works well. It holds your account ID and recovery words.
+      show_words: Prefer to write it down? Show the words
+      account_hint: "Account ID (record it with the words):"
+      confirm: I’ve saved the kit somewhere safe, outside this device
+      continue: Continue
+
+    confirm_dose:
+      title: Record this dose?
+      accept: Yes, I dosed
+      cancel: Cancel
+
+    info:
+      title: Why batch & expiry?
+      expiry_html: >-
+        The <strong>expiry</strong> feeds the won’t-finish-in-time warning at
+        your dose frequency. The <strong>batch number</strong> is recorded so
+        it’s to hand if a recall is ever announced — counta can’t match recalls
+        for you yet.
+      storage: >-
+        Both are stored inside your encrypted pen record. counta.click can’t
+        read either of them.
+      close: Close
+
+    trash:
+      title: Trash this pen?
+      body: >-
+        This deletes the pen, its dose history and its batch number from your
+        account. If you’d rather keep the history, archive it instead — archived
+        pens stay in your encrypted data for 2 years.
+      confirm: Trash pen
+      cancel: Keep pen
+
+    ics:
+      title: Add dose reminders to your calendar?
+      body: >-
+        This builds a calendar file on your device — open it and your calendar
+        app adds one event per remaining dose, plus a “buy more” event about two
+        doses before run-out.
+      caveat_html: >-
+        <strong>Heads-up:</strong> once imported, your calendar provider holds
+        your dose schedule. That tradeoff is yours to make — counta’s servers
+        never see it.
+      confirm: Get calendar file
+      cancel: Cancel
+
+    delete:
+      title: Delete account & all data?
+      body: >-
+        This permanently deletes your account, passkeys and encrypted pen
+        records. There is no undo — counta.click holds no copy of your keys, so
+        nothing can be restored for you afterwards.
+      confirm: Delete everything
+      cancel: Keep my account
+
+  # Serialised into the page for app/javascript/i18n.js. No HTML in here — the
+  # client inserts these as text.
+  client:
+    pen:
+      default_name: My pen
+      # "LOT" and "EXP" mimic what is printed on the physical pen, so they are
+      # deliberately not translated.
+      lot: "LOT %{batch}"
+      exp: "EXP %{expiry}"
+      unknown: "—"
+      front: Front of pen
+      back: Back of pen — batch and expiry
+      archived_suffix: "%{name} · archived"
+      switcher: "%{name} · %{strength} · %{percent}%"
+      switcher_no_strength: "%{name} · %{percent}%"
+      add: ＋ Add a pen
+
+    product_other: Something else…
+
+    setup:
+      capacity_custom: Custom…
+      total_clicks_hint_preset: >-
+        Pre-filled: %{clicks} clicks (%{name} %{capacity}). Override for a
+        custom pen.
+      total_clicks_hint_custom: >-
+        Count from your pen’s dose table, or dial a full pen to check.
+
+    dose:
+      clicks:
+        one: 1 click
+        other: "%{count} clicks"
+      readout_numeric: counter will show %{units}
+      readout_progress: "≈ %{units} %{unit} · the window shows no number — your click count is the dose"
+      now: Dose now
+      empty_button: Pen is empty
+      confirm_sub: "≈ %{units} %{unit} · %{date}"
+      today: today
+
+    stats:
+      units_left: "%{unit} left"
+      units_left_ml: "%{unit} left · %{ml} mL"
+      doses_left: doses left
+      clicks_left: clicks left
+
+    warnings:
+      expired: This pen expired %{expiry}.
+      expiring_soon:
+        one: >-
+          At one dose every %{frequency}, only about 1 more dose fits before
+          this pen expires (%{expiry}) — but %{remaining} are left in it.
+        other: >-
+          At one dose every %{frequency}, only about %{count} more doses fit
+          before this pen expires (%{expiry}) — but %{remaining} are left in it.
+      empty: This pen is empty.
+      last_dose: Running out — this is the last full dose in this pen.
+      part_dose: Not enough left in this pen for a full dose.
+
+    warnings_doses:
+      one: 1 dose
+      other: "%{count} doses"
+
+    frequency:
+      days:
+        one: day
+        other: "%{count} days"
+
+    history:
+      empty: No doses yet
+      entry_units: "≈ %{units} %{unit}"
+
+    archived:
+      note: >-
+        Archived %{archived_on}. Its dose history and batch number stay in your
+        encrypted data until %{purge_after}, after which counta.click deletes it.
+      list_label: "%{name} · archived %{date}"
+      list_open: Open
+      list_open_label: Open %{name}, archived %{date}
+      list_empty: No archived pens
+
+    account:
+      passkey_row: Passkey %{number}
+      passkey_added: added %{date}
+
+    status:
+      pen_saved: Pen saved.
+      dose_recorded:
+        one: "Dose recorded: 1 click. %{remaining} clicks remain."
+        other: "Dose recorded: %{count} clicks. %{remaining} clicks remain."
+      pen_archived: Pen archived. Its history is kept for 2 years.
+      pen_unarchived: Pen unarchived.
+      passkey_added: Passkey added.
+      account_deleted: Account and all data deleted.
+      recovered: Recovered. You can add a passkey from the account panel.
+      push_none: No push data found for this device.
+
+    errors:
+      # Never surface a raw API or exception string: it tells a person nothing
+      # useful and leaks implementation detail. Details go to the console.
+      generic: Something went wrong. Please try again.
+      save_pen: counta couldn’t save this pen, so your changes haven’t been stored. Please try again.
+      save_dose: counta couldn’t save that dose, so it hasn’t been recorded. Please try again.
+      update_pen: counta couldn’t update this pen. Please try again.
+      trash_pen: counta couldn’t trash this pen. Please try again.
+      delete_account: counta couldn’t delete your account. Please try again.
+      capacity_required: >-
+        Enter how much medicine the pen holds and how many clicks it has —
+        counta needs both to convert between them.
+      nothing_to_schedule: There are no doses left in this pen to schedule.
+      sign_in_failed: That sign-in didn’t complete. Please try again.
+      recovery_mismatch: That account ID and kit don’t match.
+      kit_file_invalid: That file doesn’t look like a counta recovery kit.
+      kit_words_count: A recovery kit has exactly 24 words.
+      kit_words_unknown: "“%{word}” isn’t a recovery-kit word."
+      kit_words_checksum: >-
+        Those words don’t look right — check for a typo, or words entered out of
+        order.
+      prf_unsupported: >-
+        This passkey can’t be used for encryption on this device. Try a platform
+        passkey such as Face ID, Touch ID, Windows Hello or an Android screen
+        lock.
+      push_none: >-
+        counta hasn’t registered any push data for this browser — there’s
+        nothing to clear yet.
+
+    ics:
+      summary_numeric: "Dose day — %{name}: dial %{clicks} — the counter will show %{units}"
+      summary_progress: "Dose day — %{name}: dial %{clicks} (≈ %{units}) — the window shows no number, your click count is the dose"
+      description: Exported from counta.click. counta counts clicks; it isn’t medical advice.
+      refill: Buy more %{name} — current pen almost finished

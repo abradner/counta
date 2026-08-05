@@ -9,6 +9,7 @@ import { signup, signIn, addPasskey, recoverWithKit, signOut, deleteAccount } fr
 import { encryptPayload, decryptPayload } from "crypto";
 import { PrfUnsupportedError } from "passkeys";
 import { buildIcs } from "ics";
+import { t, clicks, tNodes } from "i18n";
 
 const $ = id => document.getElementById(id);
 const PISTON_TRAVEL = 160;
@@ -131,7 +132,7 @@ function buildProductSelect() {
   const sel = $("f-product");
   sel.innerHTML = "";
   products.forEach(p => sel.append(new Option(`${p.name} ${p.strength} (${p.capacity_label})`, p.id)));
-  sel.append(new Option("Something else…", "custom"));
+  sel.append(new Option(t("product_other"), "custom"));
 }
 
 function fillSetupForm(key) {
@@ -141,13 +142,14 @@ function fillSetupForm(key) {
   const cap = $("f-capacity");
   cap.innerHTML = "";
   if (p.capacity_label) cap.append(new Option(p.capacity_label, "0"));
-  cap.append(new Option("Custom…", "custom"));
+  cap.append(new Option(t("setup.capacity_custom"), "custom"));
   cap.value = p.capacity_label ? "0" : "custom";
   $("custom-cap-wrap").hidden = cap.value !== "custom";
   $("f-clicks").value = p.total_clicks ?? "";
   $("clicks-hint").textContent = p.capacity_label
-    ? `Pre-filled: ${p.total_clicks} clicks (${p.name} ${p.capacity_label}). Override for a custom pen.`
-    : "Count from your pen’s dose table, or dial a full pen to check.";
+    ? t("setup.total_clicks_hint_preset", {
+        clicks: p.total_clicks, name: p.name, capacity: p.capacity_label })
+    : t("setup.total_clicks_hint_custom");
   $("f-freq").value = String(p.default_freq_days);
 }
 
@@ -177,7 +179,7 @@ async function savePenForm() {
   }
   const totalClicks = parseInt($("f-clicks").value, 10);
   if (!capUnits || !totalClicks) {
-    alert("Need pen capacity and total clicks to do click math.");
+    alert(t("errors.capacity_required"));
     return;
   }
   const data = {
@@ -214,13 +216,14 @@ async function savePenForm() {
   } catch (e) {
     if (isNew) pens = pens.filter(p => p !== target);
     else target.data = previousData;
-    alert("Couldn’t save this pen: " + e.message);
+    console.error(e);
+    alert(t("errors.save_pen"));
     return;
   }
   activePen = target;
   editingPen = null;
   enterDoseMode();
-  announce("Pen saved. Dose screen ready.");
+  announce(t("status.pen_saved"));
 }
 
 // The header chip is the pen switcher: pens in use, plus the add-a-pen entry
@@ -229,7 +232,9 @@ async function savePenForm() {
 function penLabel(p) {
   const d = p.data;
   const pct = d.totalClicks ? Math.round(remainingClicksOf(d) / d.totalClicks * 100) : 100;
-  return [ d.name, d.strength, `${pct}%` ].filter(Boolean).join(" · ");
+  return d.strength
+    ? t("pen.switcher", { name: d.name, strength: d.strength, percent: pct })
+    : t("pen.switcher_no_strength", { name: d.name, percent: pct });
 }
 
 function activePens() {
@@ -242,12 +247,12 @@ function buildSwitcher() {
   // Viewing an archived pen isn't a switchable state, so it shows as a
   // disabled marker rather than a listed option.
   if (activePen?.archivedAt) {
-    const marker = new Option(`${activePen.data.name} · archived`, "__archived__");
+    const marker = new Option(t("pen.archived_suffix", { name: activePen.data.name }), "__archived__");
     marker.disabled = true;
     sel.append(marker);
   }
   activePens().forEach(p => sel.append(new Option(penLabel(p), p.id)));
-  sel.append(new Option("＋ Add a pen", "__add__"));
+  sel.append(new Option(t("pen.add"), "__add__"));
   sel.value = activePen?.archivedAt ? "__archived__" : activePen?.id;
   sel.hidden = pens.length === 0;
 }
@@ -263,6 +268,14 @@ const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); retur
 // order once anything is backdated. Anything that means "most recent dose"
 // must sort first.
 const byDate = history => [ ...history ].sort((a, b) => a.date.localeCompare(b.date));
+// Month + year in the viewer's locale — never MM/YYYY, whose field order and
+// separator differ by locale and reads as ambiguous to half the world.
+const monthYear = expiry =>
+  new Date(+expiry.slice(0, 4), +expiry.slice(5, 7) - 1, 1)
+    .toLocaleDateString(undefined, { month: "short", year: "numeric" });
+const unitsLeftLabel = (d, rc) => d.capMl
+  ? t("stats.units_left_ml", { unit: d.unit, ml: (d.capMl * rc / d.totalClicks).toFixed(2) })
+  : t("stats.units_left", { unit: d.unit });
 // Last day of the pen's expiry month, local midnight.
 const expiryEnd = d => new Date(+d.expiry.slice(0, 4), +d.expiry.slice(5, 7), 0);
 
@@ -288,13 +301,10 @@ function timeEl(iso) {
 }
 
 function renderArchivedNote(p) {
-  const el = $("archived-note-text");
-  el.replaceChildren(
-    "Archived ", timeEl(p.archivedAt),
-    ". Its dose history and batch number stay in your encrypted data until ",
-    timeEl(p.purgeAfter),
-    ", after which counta.click deletes it."
-  );
+  $("archived-note-text").replaceChildren(...tNodes("archived.note", {
+    archived_on: timeEl(p.archivedAt),
+    purge_after: timeEl(p.purgeAfter)
+  }));
 }
 
 function enterDoseMode() {
@@ -328,14 +338,15 @@ async function setArchived(flag) {
   try {
     await persistPen(activePen, { archived: flag });
   } catch (e) {
-    alert("Couldn’t update the pen: " + e.message);
+    console.error(e);
+    alert(t("errors.update_pen"));
     return;
   }
   editingPen = null;
   // Stay on the pen: seeing its archived state (and the retention line) is
   // the confirmation that the action landed.
   enterDoseMode();
-  announce(flag ? "Pen archived. Its history is kept for 2 years." : "Pen unarchived.");
+  announce(t(flag ? "status.pen_archived" : "status.pen_unarchived"));
 }
 
 /* ============ pen svg (ported; hooks per counta-pen.svg header) ============ */
@@ -346,15 +357,17 @@ function paintPen() {
   const s = svg();
   for (const [ k, v ] of Object.entries(d.theme)) s.style.setProperty(k, v);
   const n = s.querySelector("#product-name");
-  n.textContent = d.name || "My pen";
+  n.textContent = d.name || t("pen.default_name");
   n.removeAttribute("textLength");
   if (n.getComputedTextLength() > 118) {
     n.setAttribute("textLength", 118);
     n.setAttribute("lengthAdjust", "spacingAndGlyphs");
   }
   s.querySelector("#product-strength").textContent = d.strength;
-  s.querySelector("#label-batch").textContent = "LOT " + (d.batch || "—");
-  s.querySelector("#label-expiry").textContent = "EXP " + (d.expiry ? d.expiry.slice(5, 7) + "/" + d.expiry.slice(0, 4) : "—");
+  s.querySelector("#label-batch").textContent =
+    t("pen.lot", { batch: d.batch || t("pen.unknown") });
+  s.querySelector("#label-expiry").textContent =
+    t("pen.exp", { expiry: d.expiry ? monthYear(d.expiry) : t("pen.unknown") });
   const f = d.totalClicks ? remainingClicks() / d.totalClicks : 1;
   s.querySelector("#piston-assembly").style.transform = `translateY(${(1 - f) * PISTON_TRAVEL}px)`;
   // progress-style windows show no readable number (docs/design-notes.md) —
@@ -364,7 +377,7 @@ function paintPen() {
 }
 function showBack(back) {
   svg().classList.toggle("show-back", back);
-  $("pen-caption").textContent = back ? "Back of pen — batch & expiry" : "Front of pen";
+  $("pen-caption").textContent = t(back ? "pen.back" : "pen.front");
 }
 
 /* ============ dose mode (ported) ============ */
@@ -404,16 +417,16 @@ function renderDose() {
   // The sub-line depends on counter_style (docs/design-notes.md):
   //   numeric  → the window really shows the number
   //   progress → the window shows nothing readable; say so
-  $("readout-big").textContent = doseClicks + (doseClicks === 1 ? " click" : " clicks");
+  $("readout-big").textContent = clicks(doseClicks);
   $("readout-sub").textContent = d.counterStyle === "progress"
-    ? `≈ ${fmtU(u)} ${d.unit} · the window shows no number — your click count is the dose`
-    : `counter will show ${fmtU(u)}`;
+    ? t("dose.readout_progress", { units: fmtU(u), unit: d.unit })
+    : t("dose.readout_numeric", { units: fmtU(u) });
   [ ...$("chips").children ].forEach((b, i) =>
     b.setAttribute("aria-pressed", clicksFor(d.common[i]) === doseClicks));
   // An empty pen can't deliver a dose, so don't offer to record one.
   const empty = remainingClicks() === 0;
   $("dose-now").disabled = empty;
-  $("dose-now").textContent = empty ? "Pen is empty" : "Dose now";
+  $("dose-now").textContent = t(empty ? "dose.empty_button" : "dose.now");
   // A finished or expired pen suggests archiving rather than trashing —
   // archiving keeps its history and batch number.
   $("archive-pen").hidden = !(empty || isExpired(d));
@@ -427,26 +440,31 @@ function renderStatsWarnings() {
   const rd = remainingDoses();
   const ml = d.capMl ? ` · ${(d.capMl * rc / d.totalClicks).toFixed(2)} mL` : "";
   $("stats").innerHTML =
-    `<div class="stat"><div class="v">${esc(fmtU(ru))}</div><div class="k">${esc(d.unit)} left${esc(ml)}</div></div>` +
-    `<div class="stat"><div class="v">${rd}</div><div class="k">doses left</div></div>` +
-    `<div class="stat"><div class="v">${rc}</div><div class="k">clicks left</div></div>`;
+    `<div class="stat"><div class="v">${esc(fmtU(ru))}</div><div class="k">${esc(unitsLeftLabel(d, rc))}</div></div>` +
+    `<div class="stat"><div class="v">${rd}</div><div class="k">${esc(t("stats.doses_left"))}</div></div>` +
+    `<div class="stat"><div class="v">${rc}</div><div class="k">${esc(t("stats.clicks_left"))}</div></div>`;
   const w = [];
   const today = startOfToday();
   if (d.expiry) {
     const expEnd = expiryEnd(d);
     if (expEnd < today) {
-      w.push([ "red", `This pen expired ${d.expiry.slice(5, 7)}/${d.expiry.slice(0, 4)}.` ]);
+      w.push([ "red", t("warnings.expired", { expiry: monthYear(d.expiry) }) ]);
     } else if (rd > 0) {
       const runout = new Date(today);
       runout.setDate(runout.getDate() + Math.ceil(rd * d.freqDays));
       if (runout > expEnd) {
         const dosesByExp = Math.floor((expEnd - today) / (864e5 * d.freqDays));
-        w.push([ "amber", `Heads-up: at every ${d.freqDays} day${d.freqDays > 1 ? "s" : ""}, you’ll only fit ~${dosesByExp} more dose${dosesByExp === 1 ? "" : "s"} before expiry (${d.expiry.slice(5, 7)}/${d.expiry.slice(0, 4)}) — ${rd} doses remain in the pen.` ]);
+        w.push([ "amber", t("warnings.expiring_soon", {
+          count: dosesByExp,
+          frequency: t("frequency.days", { count: d.freqDays }),
+          expiry: monthYear(d.expiry),
+          remaining: t("warnings_doses", { count: rd })
+        }) ]);
       }
     }
   }
-  if (rc === 0) w.push([ "red", "This pen is empty." ]);
-  else if (rd <= 1) w.push([ "amber", rd === 1 ? "Running out: last full dose in this pen." : "Not enough left for a full dose." ]);
+  if (rc === 0) w.push([ "red", t("warnings.empty") ]);
+  else if (rd <= 1) w.push([ "amber", t(rd === 1 ? "warnings.last_dose" : "warnings.part_dose") ]);
   $("warnings").innerHTML = w.map(([ c, t ]) =>
     `<div class="warn ${c}"><span aria-hidden="true">${c === "red" ? "⛔" : "⚠️"}</span><span>${esc(t)}</span></div>`).join("");
 }
@@ -455,7 +473,7 @@ function renderHistory() {
   const ul = $("history");
   const h = pen().history;
   if (!h.length) {
-    ul.innerHTML = '<li class="empty">No doses yet</li>';
+    ul.innerHTML = `<li class="empty">${esc(t("history.empty"))}</li>`;
     return;
   }
   const short = iso => localMidnight(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -464,8 +482,8 @@ function renderHistory() {
   ul.innerHTML = byDate(h).slice(-5).reverse().map(e =>
     // Units are derived from clicks at render time: clicks are canonical, and
     // a stored figure would go stale if the pen's capacity is ever corrected.
-    `<li><span>${esc(short(e.date))}</span><span><strong>${e.clicks} clicks</strong> ` +
-    `<span class="mgv">≈ ${esc(fmtU(unitsForClicks(e.clicks)))} ${esc(pen().unit)}</span></span></li>`).join("");
+    `<li><span>${esc(short(e.date))}</span><span><strong>${esc(clicks(e.clicks))}</strong> ` +
+    `<span class="mgv">${esc(t("history.entry_units", { units: fmtU(unitsForClicks(e.clicks)), unit: pen().unit }))}</span></span></li>`).join("");
 }
 
 /* ============ first-run / auth flows ============ */
@@ -496,7 +514,8 @@ async function completeSignup() {
     if (e instanceof PrfUnsupportedError) {
       $("prf-dlg").showModal();
     } else {
-      showError("landing-error", e);
+      console.error(e);
+      showError("landing-error", new Error(t("errors.generic")));
     }
   }
 }
@@ -533,8 +552,9 @@ async function doSignIn(errEl) {
     accountId = res.accountId;
     await loadApp();
   } catch (e) {
-    showError(errEl, e instanceof PrfUnsupportedError ? e :
-      new Error("Sign-in didn’t complete. " + (e.message || e)));
+    console.error(e);
+    showError(errEl, new Error(t(e instanceof PrfUnsupportedError
+      ? "errors.prf_unsupported" : "errors.sign_in_failed")));
   }
 }
 
@@ -546,10 +566,14 @@ async function doRecover() {
     dek = res.dek;
     accountId = res.accountId;
     await loadApp();
-    announce("Recovered. Consider adding a passkey from the account panel.");
+    announce(t("status.recovered"));
   } catch (e) {
-    showError("rec-error", e.status === 401
-      ? new Error("That account ID and kit don’t match.") : e);
+    console.error(e);
+    // Kit-entry mistakes (wrong word count, unknown word, bad checksum) are
+    // raised locally before any request, so they carry no status — and their
+    // messages are the only actionable feedback available. Keep them.
+    showError("rec-error", e.status === undefined ? e
+      : new Error(t(e.status === 401 ? "errors.recovery_mismatch" : "errors.generic")));
   }
 }
 
@@ -558,20 +582,21 @@ function renderArchivedList() {
   const ul = $("archived-list");
   const archived = pens.filter(p => p.archivedAt);
   if (!archived.length) {
-    ul.innerHTML = '<li class="empty">No archived pens</li>';
+    ul.innerHTML = `<li class="empty">${esc(t("archived.list_empty"))}</li>`;
     return;
   }
   ul.innerHTML = "";
   archived.forEach(p => {
     const li = document.createElement("li");
     const label = document.createElement("span");
-    label.append(`${p.data.name} · archived `, timeEl(p.archivedAt));
+    label.textContent = t("archived.list_label", { name: p.data.name, date: localDate(p.archivedAt) });
     const open = document.createElement("button");
     open.className = "linklike";
-    open.textContent = "Open";
+    open.textContent = t("archived.list_open");
     // Several rows means several "Open" buttons — name each one so screen
     // reader users (and click_button) can tell them apart.
-    open.setAttribute("aria-label", `Open ${p.data.name}, archived ${localDate(p.archivedAt)}`);
+    open.setAttribute("aria-label",
+      t("archived.list_open_label", { name: p.data.name, date: localDate(p.archivedAt) }));
     open.addEventListener("click", () => {
       activePen = p;
       editingPen = null;
@@ -589,7 +614,8 @@ async function openAccountPanel() {
   renderArchivedList();
   const creds = await api("/api/credentials");
   $("passkey-list").innerHTML = creds.map((c, i) =>
-    `<li><span>Passkey ${i + 1}</span><span class="mgv">added ${new Date(c.created_at).toLocaleDateString()}</span></li>`).join("");
+    `<li><span>${esc(t("account.passkey_row", { number: i + 1 }))}</span>` +
+    `<span class="mgv">${esc(t("account.passkey_added", { date: localDate(c.created_at) }))}</span></li>`).join("");
   show("account-screen");
 }
 
@@ -599,7 +625,7 @@ function downloadIcs() {
   const ics = buildIcs(d, activePen.id, remainingDoses(), doseClicks,
     `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`);
   if (!ics) {
-    alert("Nothing left to schedule for this pen.");
+    alert(t("errors.nothing_to_schedule"));
     return;
   }
   const a = document.createElement("a");
@@ -619,13 +645,14 @@ function wire() {
     try {
       await api("/device/flush", { method: "POST" });
     } catch (e) {
-      showError("landing-error", e);
+      console.error(e);
+      showError("landing-error", new Error(t("errors.generic")));
       return;
     }
     // Deliberately does not claim a deletion: the endpoint is a stub until
     // push notifications exist, and there is nothing to delete yet.
-    announce("No push data found for this device.");
-    alert("counta hasn’t registered any push data for this browser — there’s nothing to clear yet.");
+    announce(t("status.push_none"));
+    alert(t("errors.push_none"));
   });
 
   // disclaimer / prf dialogs
@@ -652,7 +679,7 @@ function wire() {
       $("rec-account").value = kit.account_id || "";
       $("rec-words").value = (kit.words || []).join(" ");
     } catch {
-      showError("rec-error", new Error("That file doesn’t look like a counta recovery kit."));
+      showError("rec-error", new Error(t("errors.kit_file_invalid")));
     }
   });
 
@@ -728,9 +755,12 @@ function wire() {
     renderDose();
   });
   $("dose-now").addEventListener("click", () => {
-    $("confirm-clicks").textContent = doseClicks + (doseClicks === 1 ? " click" : " clicks");
+    $("confirm-clicks").textContent = clicks(doseClicks);
     const dte = $("f-date").value || todayISO();
-    $("confirm-mg").textContent = `≈ ${fmtU(unitsForClicks(doseClicks))} ${pen().unit} · ${dte === todayISO() ? "today" : dte}`;
+    $("confirm-mg").textContent = t("dose.confirm_sub", {
+      units: fmtU(unitsForClicks(doseClicks)), unit: pen().unit,
+      date: dte === todayISO() ? t("dose.today") : localDate(localMidnight(dte))
+    });
     $("confirm-dlg").showModal();
   });
   $("confirm-yes").addEventListener("click", async () => {
@@ -741,13 +771,14 @@ function wire() {
       await persistPen(activePen);
     } catch (e) {
       pen().history.pop(); // not saved — don't show it as if it were
-      alert("Couldn’t save that dose: " + e.message);
+      console.error(e);
+      alert(t("errors.save_dose"));
       return;
     }
     renderHistory();
     renderDose();
     buildSwitcher(); // % remaining in the switcher label stays live
-    announce(`Dose recorded: ${doseClicks} clicks. ${remainingClicks()} clicks remain.`);
+    announce(t("status.dose_recorded", { count: doseClicks, remaining: remainingClicks() }));
   });
   $("confirm-no").addEventListener("click", () => $("confirm-dlg").close());
   $("info-btn").addEventListener("click", () => $("info-dlg").showModal());
@@ -762,7 +793,8 @@ function wire() {
     try {
       if (activePen.id) await api(`/api/pens/${activePen.id}`, { method: "DELETE" });
     } catch (e) {
-      alert("Couldn’t trash the pen: " + e.message);
+      console.error(e);
+      alert(t("errors.trash_pen"));
       return;
     }
     pens = pens.filter(p => p !== activePen);
@@ -791,9 +823,11 @@ function wire() {
     try {
       await addPasskey(dek, { requestGesture });
       await openAccountPanel();
-      announce("Passkey added.");
+      announce(t("status.passkey_added"));
     } catch (e) {
-      showError("account-error", e instanceof PrfUnsupportedError ? e : e);
+      console.error(e);
+      showError("account-error", new Error(t(e instanceof PrfUnsupportedError
+        ? "errors.prf_unsupported" : "errors.generic")));
     }
   });
   $("delete-account").addEventListener("click", () => $("delete-dlg").showModal());
@@ -803,7 +837,8 @@ function wire() {
     try {
       await deleteAccount();
     } catch (e) {
-      showError("account-error", e);
+      console.error(e);
+      showError("account-error", new Error(t("errors.delete_account")));
       return;
     }
     dek = null;
@@ -811,7 +846,7 @@ function wire() {
     pens = [];
     activePen = null;
     show("landing-screen");
-    announce("Account and all data deleted.");
+    announce(t("status.account_deleted"));
   });
 }
 
