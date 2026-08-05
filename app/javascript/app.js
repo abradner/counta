@@ -233,6 +233,7 @@ function enterSetup(fromDose) {
   $("dose-card").hidden = true;
   $("cancel-setup").hidden = !fromDose;
   // Archive/trash live on the edit screen ("settings"), never on new-pen setup.
+  previewSetupPen();
   $("archive-pen-edit").hidden = !editingPen || !!editingPen.archivedAt;
   $("trash-pen-edit").hidden = !editingPen;
   buildSwitcher();
@@ -426,11 +427,34 @@ async function setArchived(flag) {
 
 /* ============ pen svg (ported; hooks per counta-pen.svg header) ============ */
 const svg = () => $("pen-svg");
+// Applies a product's colours to the graphic. Separate from paintPen because
+// setup needs to preview a product before any pen exists — and because the
+// default theme can no longer ride in an inline style attribute: the CSP has
+// no 'unsafe-inline', so those attributes are dropped and every var() fell
+// back to nothing, rendering the pen black (issue #17).
+function paintTheme(theme) {
+  if (!theme) return;
+  const s = svg();
+  for (const [ k, v ] of Object.entries(theme)) s.style.setProperty(k, v);
+}
+
+// Previews the product currently selected in the setup form.
+function previewSetupPen() {
+  const key = $("f-product").value;
+  const p = productByKey(key);
+  if (!p) return; // products not loaded yet
+  paintTheme(p.theme);
+  const s = svg();
+  s.querySelector("#product-name").textContent =
+    key === "custom" ? ($("f-name").value || t("pen.default_name")) : p.name;
+  s.querySelector("#product-strength").textContent = p.strength || "";
+}
+
 function paintPen() {
   const d = pen();
   if (!d) return;
   const s = svg();
-  for (const [ k, v ] of Object.entries(d.theme)) s.style.setProperty(k, v);
+  paintTheme(d.theme);
   const n = s.querySelector("#product-name");
   n.textContent = d.name || t("pen.default_name");
   n.removeAttribute("textLength");
@@ -781,7 +805,9 @@ function wire() {
   $("unarchive-pen").addEventListener("click", () => setArchived(false));
 
   // setup
-  $("f-product").addEventListener("change", e => fillSetupForm(e.target.value));
+  $("f-product").addEventListener("change", e => { fillSetupForm(e.target.value); previewSetupPen(); });
+  // Typing a custom pen's name should show up on the label as you go.
+  $("f-name").addEventListener("input", previewSetupPen);
   $("f-capacity").addEventListener("change", e => {
     const p = productByKey($("f-product").value);
     $("custom-cap-wrap").hidden = e.target.value !== "custom";
