@@ -52,6 +52,12 @@ Everything is px-sized; rather than a rem refactor before the real codebase exis
 
 `zoom` is supported in Chrome/Safari/Firefox 126+. Do the proper rem/container-query pass in the real codebase.
 
+## Roadmap
+
+Feature tracking lives in [GitHub issues](https://github.com/abradner/counta/issues), not this file.
+
+**Anti-roadmap** — standing policy, so it stays here: no weight tracking, symptom dashboards, community feeds, AI coaching, or interaction checkers. Every GLP-1 app does these; they are other ponies' tricks, and most expand the sensitive-data surface the privacy design exists to avoid.
+
 ## Tone
 
 All copy descriptive, never prescriptive ("counter will show…", "you dialled…"), per the medical-device boundary noted in `data-privacy.md`. Footer disclaimer stays.
