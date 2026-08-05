@@ -967,6 +967,18 @@ window.countaTest = {
     } });
     return data.history.length;
   },
+  // Appends a dose straight to the stored pen, for tests that need many.
+  async appendDose(date) {
+    const [ row ] = await api("/api/pens");
+    const data = await decryptPayload(dek, row.blob);
+    data.history.push({ id: crypto.randomUUID(), date, clicks: 1,
+                        units: data.capUnits / data.totalClicks });
+    await api(`/api/pens/${row.id}`, { method: "PUT", body: {
+      blob: await encryptPayload(dek, data), archived: row.archived_at != null,
+      expected_updated_at: row.updated_at
+    } });
+    return data.history.length;
+  },
   rows: () => api("/api/pens"),
   decryptRow: row => decryptPayload(dek, row.blob),
   // Writes a payload as if from another device, at the row's current version.
