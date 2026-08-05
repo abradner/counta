@@ -198,9 +198,20 @@ projects; adjust only with reason, and record the reason (see §10).
 - Destructive actions (dropping data, deleting files you didn't just create, rewriting published
   history) and outward-facing actions (publishing, sending, deploying) need explicit approval,
   every time. Approval for one instance is not approval for the next.
-- Never merge to a shared branch, force-push, or rewrite published history without an explicit,
-  current go-ahead. A green build and an auto-mode session default are not that signal — if the
-  work is ready, say so and stop.
+- **Never force-push to `main`. There is no go-ahead for this — not from a green build, not from
+  the operator, not to tidy history.** Every other destructive git operation is "ask first"; this
+  one is simply off the table. (Operator instruction, 2026-08-05, after an agent — me — pushed a
+  docs commit straight to main unasked. That single instance was let stand only because that
+  session would finish before anything shipped. It is **not** a standing exemption for
+  pre-production: committing to `main` still needs a go-ahead, whatever the environment. Branch
+  protection lands before production, at which point the tooling enforces what this paragraph
+  asks for.)
+- Never merge to a shared branch, or rewrite published history, without an explicit, current
+  go-ahead. A green build and an auto-mode session default are not that signal — if the work is
+  ready, say so and stop.
+- **Work on a branch and open a PR, even for a one-line docs change.** The cost is a minute; the
+  cost of the habit eroding is that "it was only docs" becomes the reason something real lands
+  unreviewed.
 - If you encounter a violation of a safety rule already committed (a plaintext secret, a
   destructive migration lying in wait), flag it immediately — finding it is not the same as
   having caused it, and silence helps nobody.
