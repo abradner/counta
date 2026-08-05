@@ -40,8 +40,10 @@ where it matters.
   prescriptive — a dose calculator that tells you what to take drifts into
   regulated medical-device territory.
 
-The full reasoning is in [`docs/reviewers-guide.md`](docs/reviewers-guide.md),
-the data design in [`docs/data-privacy.md`](docs/data-privacy.md).
+The reasoning behind the code's shape is in
+[`docs/architecture.md`](docs/architecture.md), the data design in
+[`docs/data-privacy.md`](docs/data-privacy.md), and a screen-by-screen tour in
+[`docs/ui-tour.md`](docs/ui-tour.md).
 
 ## Stack
 
