@@ -1,124 +1,27 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg
-   viewBox="0 0 64 64"
-   width="64"
-   height="64"
-   role="img"
-   aria-labelledby="favicon-title"
-   version="1.1"
-   id="svg3"
-   sodipodi:docname="counta-favicon.svg"
-   inkscape:version="1.3.2 (091e20e, 2023-11-25)"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <sodipodi:namedview
-     id="namedview3"
-     pagecolor="#ffffff"
-     bordercolor="#000000"
-     borderopacity="0.25"
-     inkscape:showpageshadow="2"
-     inkscape:pageopacity="0.0"
-     inkscape:pagecheckerboard="true"
-     inkscape:deskcolor="#d1d1d1"
-     inkscape:zoom="6.3999641"
-     inkscape:cx="26.328273"
-     inkscape:cy="-0.39062719"
-     inkscape:window-width="2056"
-     inkscape:window-height="1262"
-     inkscape:window-x="0"
-     inkscape:window-y="39"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="g3" />
-  <title
-     id="favicon-title">counta.click</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-labelledby="favicon-title">
+  <title id="favicon-title">counta.click</title>
   <!--
-    counta.click favicon: the dose counter window of a FlexTouch-style pen —
-    a rounded aperture with the dialled number, and the dial's pointer notch
-    above it. Authored on a 64px grid for legibility at 16px: strokes >= 3px,
-    one numeral only, no gradients. See docs/reviewers-guide.md.
+    counta.click favicon.
+
+    The mark is a C that doubles as a pen's dose dial: the ring is the dial,
+    the gap is the counter window, and the orange dot is the indicator sitting
+    in it. One shape carrying both the brand letter and the pen reference is
+    what lets it survive being shrunk.
+
+    Authored on a 64px grid and judged at 16px, which is the size that
+    actually matters. Constraints that keep it legible there:
+      no stroke thinner than 10 units; exactly two elements plus the tile;
+      the gap is wide enough that the dot never touches the ring; no
+      gradients, no text (a font would render differently everywhere).
+
+    The navy tile is deliberate: it holds a silhouette on both light and dark
+    tab strips. A near-white tile disappears on a light one.
+
     Keep double hyphens out of this comment; they make the file invalid XML.
   -->
-  <defs
-     id="defs1">
-    <clipPath
-       id="win-clip">
-      <rect
-         x="12"
-         y="20"
-         width="40"
-         height="30"
-         rx="7"
-         id="rect1" />
-    </clipPath>
-  </defs>
-  <!-- pen body panel: the surface the window sits in -->
-  <rect
-     x="8.0232716"
-     y="-60"
-     width="47.953457"
-     height="56"
-     rx="10.275741"
-     fill="#1b3a6b"
-     id="rect2"
-     transform="rotate(90)"
-     style="stroke-width:0.925371;fill:#f9f9f9" />
-  <!-- the aperture -->
-  <rect
-     x="15.811263"
-     y="-51.338982"
-     width="32.377472"
-     height="38.677967"
-     rx="5.7047338"
-     fill="#f4f6f9"
-     id="rect3"
-     style="stroke-width:0.977591;fill:#1b3a6b"
-     transform="rotate(90)" />
-  <!-- dialled value. Swap this glyph to taste; keep it to ONE character so it
-       stays legible at 16px (a two-digit number crowds the aperture). -->
-  <g
-     clip-path="url(#win-clip)"
-     id="g3"
-     transform="rotate(90,33.007746,32.890559)"
-     style="fill:#f9f9f9">
-    <text
-       id="counter-value"
-       x="-33.913315"
-       y="42.737186"
-       text-anchor="middle"
-       font-family="system-ui, '-apple-system', 'Segoe UI', Helvetica, sans-serif"
-       font-size="30px"
-       font-weight="700"
-       fill="#1b3a6b"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:30px;font-family:'SeriousShanns Nerd Font';-inkscape-font-specification:'SeriousShanns Nerd Font, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-anchor:middle;fill:#f9f9f9"
-       transform="rotate(-90)"><tspan
-         sodipodi:role="line"
-         id="tspan3"
-         x="-33.913315"
-         y="42.737186">C</tspan></text>
-  </g>
-  <!-- pointer notch: the alignment mark the dialled number lines up against,
-       pointing down at the window as it does on the pen. Orange ties it to
-       the .click in the wordmark. -->
-  <path
-     d="m 51.338982,25 v 14 l -8,-7 z"
-     fill="#e65300"
-     id="path3" />
-  <path
-     d="M 12.661015,39 V 25 l 8,7 z"
-     fill="#e65300"
-     id="path3-3" />
-  <metadata
-     id="metadata3">
-    <rdf:RDF>
-      <cc:Work
-         rdf:about="">
-        <dc:title>counta.click</dc:title>
-      </cc:Work>
-    </rdf:RDF>
-  </metadata>
+  <rect x="3" y="3" width="58" height="58" rx="13" fill="#1b3a6b"/>
+  <path d="M 41.5 18 A 19 19 0 1 0 41.5 46" stroke="#f4f6f9" stroke-width="12"
+        fill="none" stroke-linecap="round"/>
+  <circle cx="49" cy="32" r="5.5" fill="#e65300"/>
 </svg>
