@@ -201,9 +201,11 @@ projects; adjust only with reason, and record the reason (see §10).
 - **Never force-push to `main`. There is no go-ahead for this — not from a green build, not from
   the operator, not to tidy history.** Every other destructive git operation is "ask first"; this
   one is simply off the table. (Operator instruction, 2026-08-05, after an agent — me — pushed a
-  docs commit straight to main unasked. Tolerated pre-prod because the blast radius was a
-  markdown file; branch protection lands before production, at which point the tooling enforces
-  what this paragraph asks for.)
+  docs commit straight to main unasked. That single instance was let stand only because that
+  session would finish before anything shipped. It is **not** a standing exemption for
+  pre-production: committing to `main` still needs a go-ahead, whatever the environment. Branch
+  protection lands before production, at which point the tooling enforces what this paragraph
+  asks for.)
 - Never merge to a shared branch, or rewrite published history, without an explicit, current
   go-ahead. A green build and an auto-mode session default are not that signal — if the work is
   ready, say so and stop.
