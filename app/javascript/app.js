@@ -932,81 +932,23 @@ function wire() {
 }
 
 /* ============ test hooks ============ */
-// Used by the system specs to prove the envelope end-to-end without going
-// through the pen UI. Deliberately NOT shipped in production: it grants no
-// capability injected script couldn't reach through module scope anyway, but
-// it's a ready-made one-call plaintext oracle, and there's no reason to hand
-// that to an attacker to save them the trouble.
+// The specs need to drive the envelope directly — encrypt a probe, act as a
+// second device — which means reaching this module's private state, the DEK
+// most of all. That lives in its own module, dynamically imported and only in
+// the test environment: it isn't pinned elsewhere, so a real browser never
+// fetches or parses it. Getters, not values, because `dek` is null until
+// unlock and a snapshot would be null forever.
 if (document.querySelector('meta[name="test-hooks"]')?.content === "true") {
-window.countaTest = {
-  unlocked: () => dek !== null,
-  accountId: () => accountId,
-  async encryptProbe(text) {
-    const blob = await encryptPayload(dek, { v: 1, probe: text });
-    const res = await api("/api/pens", { method: "POST", body: { blob } });
-    return res.id;
-  },
-  async decryptProbe() {
-    const rows = await api("/api/pens");
-    if (!rows.length) throw new Error("no pens");
-    const data = await decryptPayload(dek, rows[0].blob);
-    return data.probe;
-  },
-  // Simulates a second device writing to the same pen: reads the current
-  // row, appends a dose, and writes it back correctly. The open UI's cached
-  // updatedAt then points at a superseded version — exactly the stale-tab
-  // situation, produced through the real API rather than by faking a 409.
-  async simulateOtherDevice(dateISO) {
-    const [ row ] = await api("/api/pens");
-    const data = await decryptPayload(dek, row.blob);
-    data.history.push({ id: crypto.randomUUID(), date: dateISO, clicks: 8,
-                        units: 8 * (data.capUnits / data.totalClicks) });
-    await api(`/api/pens/${row.id}`, { method: "PUT", body: {
-      blob: await encryptPayload(dek, data), archived: row.archived_at != null,
-      expected_updated_at: row.updated_at
-    } });
-    return data.history.length;
-  },
-  // Appends a dose straight to the stored pen, for tests that need many.
-  async appendDose(date) {
-    const [ row ] = await api("/api/pens");
-    const data = await decryptPayload(dek, row.blob);
-    data.history.push({ id: crypto.randomUUID(), date, clicks: 1,
-                        units: data.capUnits / data.totalClicks });
-    await api(`/api/pens/${row.id}`, { method: "PUT", body: {
-      blob: await encryptPayload(dek, data), archived: row.archived_at != null,
-      expected_updated_at: row.updated_at
-    } });
-    return data.history.length;
-  },
-  rows: () => api("/api/pens"),
-  decryptRow: row => decryptPayload(dek, row.blob),
-  // Writes a payload as if from another device, at the row's current version.
-  async writeRow(row, data) {
-    const [ current ] = await api("/api/pens");
-    return api(`/api/pens/${current.id}`, { method: "PUT", body: {
-      blob: await encryptPayload(dek, data), archived: current.archived_at != null,
-      expected_updated_at: current.updated_at
-    } });
-  },
-  // Another device archives the pen; this tab's cached state stays stale.
-  async archiveElsewhere() {
-    const [ row ] = await api("/api/pens");
-    return api(`/api/pens/${row.id}`, { method: "PUT", body: {
-      blob: row.blob, archived: true, expected_updated_at: row.updated_at
-    } });
-  },
-  async historyFromServer() {
-    const [ row ] = await api("/api/pens");
-    return (await decryptPayload(dek, row.blob)).history;
-  },
-  // Exact string the ICS download would contain (same code path).
-  icsPreview() {
-    const d = pen();
-    return buildIcs(d, activePen.id, remainingDoses(), doseClicks,
-      `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`);
-  }
-};
+  import("test_hooks").then(({ install }) => install({
+    api, encryptPayload, decryptPayload, buildIcs,
+    dek: () => dek,
+    accountId: () => accountId,
+    pen: () => pen(),
+    activePen: () => activePen,
+    doseClicks: () => doseClicks,
+    remainingDoses: () => remainingDoses(),
+    fmtU, unitsForClicks
+  }));
 }
 
 /* ============ boot ============ */

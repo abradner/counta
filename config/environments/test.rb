@@ -43,6 +43,11 @@ Rails.application.configure do
   # Capybara serves the app on a fixed port so the WebAuthn origin is exact
   # (origin matching is strict, including port). localhost is a secure context
   # for Chromium, so WebAuthn works without TLS in the harness.
+  # Test-only JS (spec/javascript) is added to the asset path here and nowhere
+  # else, so it physically cannot be served — or precompiled — in any other
+  # environment. See spec/javascript/test_hooks.js.
+  config.assets.paths << Rails.root.join("spec/javascript")
+
   config.x.webauthn_origin = "http://localhost:25426"
   config.x.webauthn_rp_id = "localhost"
 end
