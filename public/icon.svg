@@ -2,34 +2,34 @@
      role="img" aria-labelledby="favicon-title">
   <title id="favicon-title">counta.click</title>
   <!--
-    counta.click favicon: the dose counter window of a FlexTouch-style pen —
-    a rounded aperture with the dialled number, and the dial's pointer notch
-    above it. Authored on a 64px grid for legibility at 16px: strokes >= 3px,
-    one numeral only, no gradients.
+    counta.click icon: the dose counter window of a FlexTouch pen, with the
+    mirrored indicator that brackets it on a real Wegovy pen, framing a C for
+    counta. Portrait, because the pen is a vertical object and that silhouette
+    is what makes the mark read as a pen rather than a generic counter.
+
+    Rules that keep it working at both ends of the size range:
+      - The C is DRAWN as an arc, not set as text. A font renders differently
+        on every platform, and this file goes to browsers as-is.
+      - A C beats a numeral at 16px: one open stroke stays open, where an 8's
+        two counters fill in and blob.
+      - Nothing thinner than 4 units.
+      - Exactly three elements: window, letter, indicator pair. Judged at 16px
+        AND at iOS home-screen size — small punishes detail, large punishes
+        sparseness, and only checking one of them gets you the other's failure.
+      - Navy tile: a near-white one has no silhouette on a light tab strip.
+
+    On the Commodore question, since it will come up again: their mark is a C
+    standing alone with the chevron nested inside its own negative space. The
+    distance here comes from the C being contained in a window, and the
+    indicators being symmetric, plain triangles, outside that window. Keep all
+    three of those and this stays distinct; drop them and it won't.
+
     Keep double hyphens out of this comment; they make the file invalid XML.
   -->
-  <defs>
-    <clipPath id="win-clip">
-      <rect x="12" y="20" width="40" height="30" rx="7"/>
-    </clipPath>
-  </defs>
-
-  <!-- pen body panel: the surface the window sits in -->
-  <rect x="4" y="4" width="56" height="56" rx="12" fill="#1B3A6B"/>
-
-  <!-- the aperture -->
-  <rect x="12" y="20" width="40" height="30" rx="7" fill="#F4F6F9"/>
-
-  <!-- dialled value. Swap this glyph to taste; keep it to ONE character so it
-       stays legible at 16px (a two-digit number crowds the aperture). -->
-  <g clip-path="url(#win-clip)">
-    <text id="counter-value" x="32" y="45" text-anchor="middle"
-          font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, sans-serif"
-          font-size="30" font-weight="700" fill="#1B3A6B">8</text>
-  </g>
-
-  <!-- pointer notch: the alignment mark the dialled number lines up against,
-       pointing down at the window as it does on the pen. Orange ties it to
-       the .click in the wordmark. -->
-  <path d="M 25 9 L 39 9 L 32 17 Z" fill="#E65300"/>
+  <rect width="64" height="64" rx="14" fill="#1b3a6b"/>
+  <rect x="19" y="9" width="26" height="46" rx="8" fill="#f4f6f9"/>
+  <path d="M 38.5 24.5 A 9.5 9.5 0 1 0 38.5 39.5" stroke="#1b3a6b" stroke-width="4.5"
+        fill="none" stroke-linecap="round"/>
+  <path d="M 9 25 L 9 39 L 16 32 Z" fill="#e65300"/>
+  <path d="M 55 25 L 55 39 L 48 32 Z" fill="#e65300"/>
 </svg>
