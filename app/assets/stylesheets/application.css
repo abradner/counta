@@ -46,7 +46,14 @@ main{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
   header.top{padding:4px 0 10px}
 }
 .pen-col{position:sticky;top:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
-.pen-col svg{width:100%;max-width:190px;height:auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
+/* Stopgap cap (#36): the tight viewBox from #34 lets the 1:6.9 pen grow
+ * ~1300px tall at max-width, so keep the whole pen inside the viewport —
+ * a sticky anchor taller than the screen is never seen whole. This shrinks
+ * the pen to fit, which is the direction #20 ruled out; the height-aware
+ * sizing pass in #36 should remove or demote it. */
+.pen-col svg{width:100%;max-width:190px;height:auto;
+  max-height:calc(100vh - 100px);max-height:calc(100dvh - 100px);
+  filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
 .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
 .card p{font-size:14px;margin:0 0 10px}
