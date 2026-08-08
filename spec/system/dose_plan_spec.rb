@@ -41,10 +41,19 @@ RSpec.describe "Dose plan", type: :system do
     JS
   end
 
-  # A Wegovy pen carrying the published escalation, started today.
-  def save_planned_wegovy(batch: "LP1234")
+  # A Wegovy pen carrying the published escalation. `started` backdates the
+  # plan's start, which matters whenever a spec needs doses to fall INSIDE the
+  # plan: a dose earlier than the start date is deliberately not a plan dose.
+  def save_planned_wegovy(batch: "LP1234", started: nil)
     select WEGOVY, from: "f-product"
     select PRESET, from: "f-plan"
+    if started
+      page.execute_script(
+        "document.getElementById('f-plan-start').value = arguments[0];" \
+        "document.getElementById('f-plan-start').dispatchEvent(new Event('change', { bubbles: true }))",
+        started.iso8601
+      )
+    end
     save_pen(batch: batch, expiry: "2027-06")
   end
 
@@ -218,6 +227,13 @@ RSpec.describe "Dose plan", type: :system do
     # Five doses exist across the account; none of them belong to this plan,
     # so it is still on its first step with all four doses ahead of it.
     expect(find("#plan-line").text).to eq("Weeks 1–4 · 0.25 mg · 4 more doses at this amount")
+
+    # And the same scoping has to reach the gap notice. The Wegovy dose above
+    # is 40 days old, which is five missed weeks by the calendar — but it
+    # predates the plan, so this plan has not been missed at all. Raising a
+    # missed-dose warning against a plan that started today would be a false
+    # alarm about someone's medication.
+    expect(page).to have_css("#plan-gap", visible: :hidden)
   end
 
   describe "a pen that cannot dial the plan" do
@@ -261,7 +277,10 @@ RSpec.describe "Dose plan", type: :system do
     # "reinitiate". One sentence cannot be true of both, so counta writes
     # neither and cites the document it is calibrated to.
     it "states the gap, cites the document, and offers to open the plan" do
-      save_planned_wegovy
+      # The plan has been running two months; the dose below falls inside it.
+      # Started today, that dose would predate the plan and correctly count
+      # for nothing — which is the scoping the isolation spec above pins.
+      save_planned_wegovy(started: browser_today - 60)
       last = browser_today - 23
       page.evaluate_async_script(<<~JS, last.iso8601)
         window.countaTest.appendDoseTo(0, arguments[0], 8).then(arguments[1]);
@@ -287,7 +306,7 @@ RSpec.describe "Dose plan", type: :system do
     it "says nothing when the next dose is merely due" do
       # Positive control's partner: a seven-day gap is a dose due today, not a
       # missed one, and a guard that fires here would be tuned away later.
-      save_planned_wegovy
+      save_planned_wegovy(started: browser_today - 60)
       page.evaluate_async_script(<<~JS, (browser_today - 7).iso8601)
         window.countaTest.appendDoseTo(0, arguments[0], 8).then(arguments[1]);
       JS

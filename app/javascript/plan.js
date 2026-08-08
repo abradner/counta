@@ -60,27 +60,31 @@ export function currentPlan(pens, plan) {
 
 /* ============ where the plan has got to ============ */
 
-// Doses recorded under this plan, across every pen carrying it.
+// Every dose recorded UNDER this plan, across every pen carrying it. One
+// definition, because two would drift: a review of this file caught
+// lastDoseDate applying only half of it, which let a dose predating the plan
+// raise a missed-dose notice against a plan the user had only just started.
 //
 // Both filters do work. The plan-id filter keeps another medicine's pen from
 // advancing this ladder (someone on Wegovy and insulin has both open at once).
 // The date filter drops doses backdated to before the plan started. Note the
 // date comparison is a plain string compare: ISO YYYY-MM-DD sorts
 // lexicographically, so this needs no Date and has no timezone.
-export function dosesTaken(plan, pens) {
-  if (!plan?.id || !plan.startedOn) return 0;
+export function planDoses(plan, pens) {
+  if (!plan?.id || !plan.startedOn) return [];
   return planPens(pens, plan.id)
     .flatMap(p => p.data.history ?? [])
-    .filter(entry => entry.date >= plan.startedOn)
-    .length;
+    .filter(entry => entry.date >= plan.startedOn);
 }
 
-// The most recent dose recorded under this plan, or null. String max — again
-// no Date, because ISO dates already sort correctly as text.
+export function dosesTaken(plan, pens) {
+  return planDoses(plan, pens).length;
+}
+
+// The most recent dose under this plan, or null when there hasn't been one.
+// String max — again no Date, because ISO dates already sort correctly as text.
 export function lastDoseDate(plan, pens) {
-  if (!plan?.id) return null;
-  return planPens(pens, plan.id)
-    .flatMap(p => p.data.history ?? [])
+  return planDoses(plan, pens)
     .reduce((latest, entry) => (latest === null || entry.date > latest ? entry.date : latest), null);
 }
 
