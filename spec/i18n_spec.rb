@@ -77,6 +77,58 @@ RSpec.describe "Copy and localisation" do
       "Copy belongs in config/locales, not in a view:\n#{offenders.join("\n")}"
   end
 
+  # Dose-plan copy (#21) must never read as a recommendation. counta
+  # transcribes a ladder the user and their prescriber chose; the moment the
+  # copy says "recommended" or "you should", a click counter has started
+  # giving medical advice — the line docs/design-notes.md "Tone" and
+  # docs/data-privacy.md both draw.
+  #
+  # Mechanical rather than a review convention on purpose (AGENTS.md §10.5).
+  PRESCRIPTIVE = /\b(recommend\w*|standard|official\w*|optimal\w*|should|safe|best dose|correct dose)\b/i
+
+  # Every leaf string whose key path mentions the plan, across both
+  # namespaces. Path-based rather than an explicit list so a key added to the
+  # plan subtree later is covered without anyone remembering to add it here.
+  def plan_copy
+    flat = {}
+    walk = lambda do |node, path|
+      case node
+      when Hash then node.each { |k, v| walk.call(v, path + [ k.to_s ]) }
+      when Array then node.each_with_index { |v, i| walk.call(v, path + [ i.to_s ]) }
+      else flat[path.join(".")] = node.to_s
+      end
+    end
+    %w[ui.setup ui.dose client.plan client.errors client.stats].each do |root|
+      walk.call(I18n.t(root), [ root ])
+    end
+    flat.select { |key, _| key.include?("plan") || key.include?("doses_left_at_step") }
+  end
+
+  it "keeps dose-plan copy free of anything that reads as a recommendation" do
+    # Positive control first, in the same example, so the two can never drift
+    # apart: if the pattern is ever tuned into something that matches nothing,
+    # this fails here rather than leaving the real check silently vacuous.
+    # (AGENTS.md §9.10 — the OTHER copy guard in this file was tuned until its
+    # false positives went quiet, which silenced the true positives too.)
+    controls = [
+      "The recommended escalation is 0.25 mg.",
+      "You should move up to 0.5 mg next week.",
+      "This is the standard ladder.",
+      "The official schedule from the manufacturer.",
+      "This is the safe amount to dial."
+    ]
+    expect(controls.reject { |c| c.match?(PRESCRIPTIVE) }).to be_empty,
+      "The prescriptive-copy guard has stopped catching prescriptive copy."
+    # ...and innocuous copy must NOT trip it, or the guard is noise that will
+    # get tuned away next time it fires.
+    expect("Your plan moves to 1 mg after this.").not_to match(PRESCRIPTIVE)
+
+    expect(plan_copy).not_to be_empty, "plan_copy matched nothing — the guard is scanning the wrong keys."
+    offenders = plan_copy.filter_map { |key, text| "#{key}: #{text}" if text.match?(PRESCRIPTIVE) }
+    expect(offenders).to be_empty,
+      "Dose-plan copy must describe, never recommend:\n#{offenders.join("\n")}"
+  end
+
   it "builds plurals with count, never by concatenating an s" do
     # The single most common localisation blocker in the original copy: many
     # languages need more than two forms, so `n + (n === 1 ? "" : "s")` is

@@ -117,6 +117,17 @@ button{font:inherit;cursor:pointer}
 .stat{background:#f2f4f7;border-radius:10px;padding:10px 8px;text-align:center}
 .stat .v{font-size:17px;font-weight:800}
 .stat .k{font-size:11px;color:var(--ink-soft);font-weight:600}
+/* Dose-plan step summary (#21). Deliberately NOT .history: that list sets
+   white-space:nowrap, and a five-step ladder's rows then set a minimum width
+   that pushes the whole card past a narrow viewport. */
+.plan-steps{list-style:none;margin:8px 0 0;padding:0;font-size:13px}
+.plan-steps li{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;
+               border-top:1px solid var(--line)}
+.plan-steps li span:last-child{color:var(--ink-soft);text-align:right}
+/* Dose-plan step line (#21): sits under the readout, reads as a caption to it
+   rather than as another warning. */
+.plan-line{margin:8px 0 0;font-size:13px;font-weight:600;color:var(--brand);text-align:center}
+.plan-line:empty{display:none}
 .warn{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:14px;font-weight:600;
       display:flex;gap:8px;align-items:flex-start}
 .warn.amber{background:var(--amber-bg);color:var(--amber-ink);border:1px solid var(--amber-line)}

@@ -88,6 +88,20 @@ en:
       frequency_daily: Every day
       frequency_twice_weekly: Twice a week
       frequency_fortnightly: Every 14 days
+      # Dose plan (#21). counta transcribes a ladder; it never proposes one.
+      # Nothing in this subtree may read as a recommendation — see the banned
+      # word guard in spec/i18n_spec.rb, which exists because copy is the
+      # place a click counter quietly turns into medical advice.
+      plan: Dose plan
+      plan_jurisdiction: >-
+        counta’s dose-plan features follow the current Australian product
+        information for the listed medicine. counta copies a published schedule
+        out for you to check against your prescription — it doesn’t pick one,
+        and it isn’t medical advice.
+      plan_started: Plan started on
+      plan_custom_pending: >-
+        Writing your own steps isn’t built yet. For now counta can transcribe a
+        published schedule, or leave this pen with no plan.
       save: Save pen
       cancel: Cancel
       archive: Archive this pen
@@ -104,6 +118,7 @@ en:
       date: Date of dose
       recent: Recent doses
       export: Add dose reminders to calendar
+      plan_edit: Edit your plan
       edit: Edit this pen’s data
       archive: Archive this pen
       unarchive: Unarchive this pen
@@ -262,10 +277,46 @@ en:
       confirm_sub: "≈ %{units} %{unit} · %{date}"
       today: today
 
+    # Dose plan (#21). Two rules hold everywhere in this subtree:
+    #   1. Say only what is true of THIS user's own data, or quote the cited
+    #      document. Never paraphrase clinical guidance — the Australian and
+    #      US product information give different missed-dose windows and
+    #      different wording for several missed doses, so one paraphrase would
+    #      be wrong in one of them.
+    #   2. Never imply counta chose, endorsed or rated a ladder.
+    # spec/i18n_spec.rb enforces the wording half of this mechanically.
+    plan:
+      option_none: No plan — same dose each time
+      option_keep: "Keep: %{label}"
+      option_continue: "Continue “%{label}” from your other pen"
+      option_preset: "%{label} (%{source})"
+      step_number: "Step %{number} of %{total}"
+      summary_amount: "%{units} %{unit} · %{doses}"
+      doses_count:
+        one: 1 dose
+        other: "%{count} doses"
+      ongoing: ongoing, no end date
+      doses_left_at_step:
+        one: 1 more dose at this amount
+        other: "%{count} more doses at this amount"
+      step_line: "%{label} · %{units} %{unit} · %{remaining}"
+      moves_next: After that your plan moves to %{units} %{unit}.
+      undeliverable: >-
+        Your plan’s next dose is %{units} %{unit}. This pen’s dial reaches
+        %{max} %{unit}.
+      source_line: Plan steps transcribed from %{source}.
+      gap: >-
+        Your last recorded dose was %{date} — %{days} days ago. Your plan
+        expects one every %{frequency}.
+      gap_read_source: "Read %{source}"
+
     stats:
       units_left: "%{unit} left"
       units_left_ml: "%{unit} left · %{ml} mL"
       doses_left: doses left
+      # A pen following a plan reports doses left AT THE CURRENT STEP, and the
+      # label names the amount so the number can't be read as a total.
+      doses_left_at_step: "doses at %{units} %{unit}"
       clicks_left: clicks left
 
     warnings:
@@ -332,6 +383,11 @@ en:
         Enter how much medicine the pen holds and how many clicks it has —
         counta needs both to convert between them.
       nothing_to_schedule: There are no doses left in this pen to schedule.
+      plan_units: Every plan step needs an amount greater than zero.
+      plan_dial: >-
+        This plan has a %{units} %{unit} step, but this pen’s dial only reaches
+        %{max} %{unit}. Pick a plan this pen can dial, or set the pen up with
+        the capacity it actually holds.
       save_ics: counta couldn’t save this pen’s calendar info, so the export failed. Please try again.
       sign_in_failed: That sign-in didn’t complete. Please try again.
       recovery_mismatch: That account ID and kit don’t match.
