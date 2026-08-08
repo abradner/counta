@@ -46,13 +46,28 @@ main{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
   header.top{padding:4px 0 10px}
 }
 .pen-col{position:sticky;top:8px;display:flex;flex-direction:column;align-items:center;gap:8px}
-/* Stopgap cap (#36): the tight viewBox from #34 lets the 1:6.9 pen grow
- * ~1300px tall at max-width, so keep the whole pen inside the viewport —
- * a sticky anchor taller than the screen is never seen whole. This shrinks
- * the pen to fit, which is the direction #20 ruled out; the height-aware
- * sizing pass in #36 should remove or demote it. */
-.pen-col svg{width:100%;max-width:190px;height:auto;
-  max-height:calc(100vh - 100px);max-height:calc(100dvh - 100px);
+/* Height-driven sizing (#36 — the real fix for #38's width+max-height clamp).
+ * The pen's 1:6.9 aspect is hostile to a width-driven box: unconstrained it
+ * grows ~1300px tall at max-width, and clamping height afterward (#38) only
+ * shrinks it back to fit — the pen is still sized by the wrong axis. Height
+ * is the axis a tall-thin object actually needs, so it's primary here and
+ * width follows from the intrinsic aspect ratio.
+ * --pen-headroom covers the header + its padding above the sticky pen column
+ * (measured 56-64px unscrolled across breakpoints) plus room to breathe
+ * before the next card; unchanged from #38's value, which was already
+ * checked against the real screenshots. */
+.pen-col svg{
+  --pen-headroom: 100px;
+  height:calc(100vh - var(--pen-headroom));
+  height:calc(100dvh - var(--pen-headroom));
+  width:auto;
+  /* Safety net, not the mechanism: on a viewport tall enough relative to its
+   * column width (height > column-width * 6.9), height-driven sizing alone
+   * would compute a pen wider than its grid column and overflow into the
+   * form beside it. 100% here is the column's own width via .pen-col, which
+   * stretches to fill the grid track at every breakpoint — so this tracks
+   * whatever the column actually is, not a hardcoded figure. */
+  max-width:100%;
   filter:drop-shadow(0 4px 10px rgba(0,0,0,.12))}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px}
 .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
