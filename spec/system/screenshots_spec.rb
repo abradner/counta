@@ -38,7 +38,13 @@ RSpec.describe "Screenshots", type: :system, if: ENV["SCREENSHOTS"] == "1" do
 
     expect(page).to have_css("#setup-card", wait: 15)
     select "Wegovy 2.4 mg (4 doses · 9.6 mg · 3 mL)", from: "f-product"
-    shot("05-pen-setup", height: 1000)
+    shot("05-pen-setup", height: 1260)
+
+    # Transcribe the published escalation, so the tour shows the dose plan on
+    # both the setup card and the dose screen (#21).
+    select "Novo Nordisk published escalation (TGA product information, revised 22 Jun 2026)",
+           from: "f-plan"
+    shot("05b-dose-plan", height: 1260)
 
     save_pen(batch: "LP1234", expiry: "2027-06")
     shot("06-dose-screen", height: 1000)
