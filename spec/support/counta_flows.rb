@@ -1,4 +1,6 @@
 # Shared system-spec flows. Each returns after the app screen is reachable.
+require "timeout"
+
 module CountaFlows
   # Full first-run: disclaimer → passkey (virtual authenticator must already
   # be added) → recovery-kit ceremony. Lands in setup mode (no pens yet).

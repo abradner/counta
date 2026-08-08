@@ -154,10 +154,37 @@ async function persistPen(p, opts = {}) {
     // against state we've already rewritten, and it would undo the wrong
     // thing. On failure this leaves the pen exactly as the caller handed it
     // over, so their rollback means what it says.
-    const snapshot = { history: p.data.history, updatedAt: p.updatedAt, archived };
+    const snapshot = {
+      history: p.data.history, updatedAt: p.updatedAt, archived,
+      calendarUid: p.data.calendarUid, calendarSequence: p.data.calendarSequence
+    };
     try {
       const theirs = await decryptPayload(dek, e.body.blob);
       p.data.history = mergeHistory(p.data.history || [], theirs.history || []);
+      // History's union-merge doesn't generalise to every blob field: a
+      // non-append-only field (one device's write means to REPLACE a value,
+      // not add to a set) needs its own policy here, or the retry below
+      // silently overwrites whatever the winning device stored with this
+      // device's stale copy. calendarUid/calendarSequence (#14) are the
+      // first of these — issue #21's plan.rev will join this list, and
+      // needs the same treatment.
+      //
+      // calendarUid: theirs already persisted first, and may already be
+      // live in a third-party calendar under it — theirs always wins over
+      // a locally-minted guess.
+      if (theirs.calendarUid) p.data.calendarUid = theirs.calendarUid;
+      // calendarSequence: RFC 5545 requires it to only grow. A write that
+      // means to bump it (an export, opts.bumpCalendarSequence) must land
+      // STRICTLY ABOVE theirs, not above this device's now-stale bump —
+      // otherwise the loser of the race walks the sequence backwards and
+      // calendar clients ignore the winner's already-exported update as
+      // stale. A write that doesn't intend to touch it just adopts theirs,
+      // same as archived below.
+      if (opts.bumpCalendarSequence) {
+        p.data.calendarSequence = (theirs.calendarSequence || 0) + 1;
+      } else if (theirs.calendarSequence != null) {
+        p.data.calendarSequence = theirs.calendarSequence;
+      }
       p.updatedAt = e.body.updated_at;
       // If the other device archived the pen, a dose save must not undo that:
       // this write never intended to change archive state, so adopt theirs.
@@ -165,6 +192,8 @@ async function persistPen(p, opts = {}) {
       adoptRow(p, await write());
     } catch (retryError) {
       p.data.history = snapshot.history;
+      p.data.calendarUid = snapshot.calendarUid;
+      p.data.calendarSequence = snapshot.calendarSequence;
       p.updatedAt = snapshot.updatedAt;
       archived = snapshot.archived;
       throw retryError;
@@ -738,7 +767,11 @@ async function buildIcsForExport(now = new Date()) {
   if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
   d.calendarSequence = (d.calendarSequence || 0) + 1;
   try {
-    await persistPen(activePen);
+    // bumpCalendarSequence: this write's INTENT is to advance the counter,
+    // so on a 409 the conflict handler must rebase the bump onto whatever
+    // the winning device already stored, not silently keep this device's
+    // now-stale guess (see the merge-policy comment in persistPen).
+    await persistPen(activePen, { bumpCalendarSequence: true });
   } catch (e) {
     d.calendarUid = snapshotUid;
     d.calendarSequence = snapshotSequence;
