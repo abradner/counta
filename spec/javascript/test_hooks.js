@@ -11,6 +11,7 @@
 // Note the context is GETTERS, not values: `dek` is null at boot and only set
 // on unlock, so capturing it once would leave every hook holding null forever.
 import { roundToNearestHalfHour } from "dosing_time";
+import { stepIndexFor, daysBetween, missedDosesSince, planStepError } from "plan";
 
 export function install(ctx) {
   const { api, encryptPayload, decryptPayload, buildIcsForExport } = ctx;
@@ -98,6 +99,40 @@ export function install(ctx) {
       // `now = new Date()` default still applies.
       return buildIcsForExport(nowMs == null ? undefined : new Date(nowMs));
     },
+
+    // The active pen's plan as stored (issue #21), and the derived number the
+    // dose screen shows — "doses left at this step" once a plan exists.
+    plan: () => ctx.pen()?.plan ?? null,
+
+    // Appends a dose to a SPECIFIC pen row, as another device would. The
+    // single-pen appendDose above always targets the first row, which can't
+    // express "a dose on the insulin pen must not advance the Wegovy ladder".
+    async appendDoseTo(index, date, clickCount) {
+      const rows = await api("/api/pens");
+      const row = rows[index];
+      const data = await decryptPayload(dek(), row.blob);
+      data.history.push({ id: crypto.randomUUID(), date, clicks: clickCount,
+                          units: clickCount * data.capUnits / data.totalClicks });
+      await api(`/api/pens/${row.id}`, { method: "PUT", body: {
+        blob: await encryptPayload(dek(), data),
+        archived: row.archived_at != null,
+        expected_updated_at: row.updated_at
+      } });
+      return data.history.length;
+    },
+
+    // plan.js's pure derivations, probed directly. They are integer/string
+    // arithmetic with no DOM and no I/O, so exercising the edge cases here is
+    // both exact and far cheaper than driving each one through the UI.
+    planStepIndex: (steps, n) => stepIndexFor({ steps }, n),
+    // All three branches of the step validator, including the null
+    // maxDialClicks one (a custom pen's dial limit is unknown, not
+    // unlimited), which no listed product can reach through the UI today.
+    planStepError: (units, maxDialClicks, unitsPerClick) =>
+      planStepError({ units }, { clicksFor: u => Math.round(u / unitsPerClick), maxDialClicks }),
+    planDaysBetween: (fromISO, toISO) => daysBetween(fromISO, toISO),
+    planMissedDoses: (lastISO, todayISO, freqDays) =>
+      missedDosesSince(lastISO, todayISO, freqDays),
 
     // The dosing-time proxy itself (#14, reused by #37): rounds `nowMs`
     // (epoch ms) to the nearest half hour, local wall-clock, and returns the
