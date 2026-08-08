@@ -7,6 +7,7 @@ pin "api"
 pin "crypto"
 pin "passkeys"
 pin "ics"
+pin "dosing_time"
 pin "i18n"
 pin "wordlist"
 

@@ -36,6 +36,17 @@ module CountaFlows
     within("#confirm-dlg") { click_button "Yes, I dosed" }
     expect(page).to have_css("#history li strong", wait: 10)
   end
+
+  # window.countaTest is installed by a dynamic import (test_hooks.js) that
+  # resolves microtasks after app.js first runs, so a spec that calls it
+  # before any other UI interaction (nothing else here has waited long
+  # enough for that promise to settle) needs its own wait.
+  def wait_for_test_hooks
+    expect(page).to have_css("body", wait: 1) # cheap: just get past initial load
+    Timeout.timeout(Capybara.default_max_wait_time) do
+      sleep 0.05 until page.evaluate_script("typeof window.countaTest !== 'undefined'")
+    end
+  end
 end
 
 RSpec.configure do |config|
