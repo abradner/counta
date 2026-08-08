@@ -348,6 +348,10 @@ function buildPlanSelect(key) {
     sel.append(new Option(t("plan.option_preset", { label: preset.label, source: preset.source.label }),
       `preset:${preset.key}`)));
   sel.value = existing ? "keep" : "none";
+  // Cleared rather than left alone: the input keeps its value across a switch
+  // to another pen, and syncPlanUi only fills a blank one — so without this a
+  // second pen's new plan would silently inherit the first pen's start date.
+  $("f-plan-start").value = "";
 
   // Nothing to offer, nothing to show: an unlisted pen with no published
   // schedule and no plan in progress gets no plan section at all rather than

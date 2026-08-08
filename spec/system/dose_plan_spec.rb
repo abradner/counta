@@ -115,6 +115,25 @@ RSpec.describe "Dose plan", type: :system do
     expect(stored_pen["plan"]).to be_nil
   end
 
+  it "defaults a new pen's plan start to today rather than the last pen's" do
+    # The date input survives the switch to another pen, and the form only
+    # fills a blank one — so a second pen's plan quietly inherited the first
+    # pen's start date, which would put its ladder on the wrong step.
+    select WEGOVY, from: "f-product"
+    select PRESET, from: "f-plan"
+    page.execute_script(
+      "document.getElementById('f-plan-start').value = '2026-01-15';" \
+      "document.getElementById('f-plan-start').dispatchEvent(new Event('change', { bubbles: true }))"
+    )
+    save_pen(batch: "PENA", expiry: "2027-06")
+    expect(stored_pen["plan"]["startedOn"]).to eq("2026-01-15")
+
+    select "＋ Add a pen", from: "chip"
+    select WEGOVY, from: "f-product"
+    select PRESET, from: "f-plan"
+    expect(find("#f-plan-start").value).to eq(browser_today.iso8601)
+  end
+
   # The defect shape that issue #1 hit and issue #18 exists to remove:
   # savePenForm rebuilds the entire blob on every save, so a field it forgets
   # to carry forward is silently deleted by an edit that had nothing to do
