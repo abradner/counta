@@ -182,7 +182,10 @@ sibling projects, toolchain path issues, platform limitations.)
 
 CI: `.github/workflows/ci.yml` runs `bundle exec rspec` (including the browser system specs) on
 every PR and push to main, with the mise-pinned Ruby and a Postgres 18 service on the same port
-as local dev. No linter is adopted yet. Deployment is undecided — don't build for it until asked.
+as local dev. A separate `lint` job runs Rubocop (`.rubocop.yml`), Brakeman, and bundler-audit —
+run `mise exec -- bundle exec rubocop` locally before pushing. (This sentence used to say "no
+linter is adopted yet"; that was stale from before #1 landed the lint job — corrected 2026-08-09
+per §10 meta-rule 1.) Deployment is undecided — don't build for it until asked.
 
 Two universal cautions, whatever the pipeline:
 
