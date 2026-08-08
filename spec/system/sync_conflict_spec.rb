@@ -102,4 +102,69 @@ RSpec.describe "Stale-tab sync", type: :system do
     expect(after.length).to eq(before + 2) # one from the other device, one here
     expect(after.map { |h| h["id"] }.uniq.length).to eq(after.length)
   end
+
+  # Issue #14 put calendarUid/calendarSequence in the pen blob alongside
+  # history — but they're NOT append-only, so history's union-merge doesn't
+  # generalise to them. A design review caught this before merge: the 409
+  # handler used to merge history only and re-write everything else from the
+  # (possibly stale) local copy, so a losing device's retry could silently
+  # carry SEQUENCE backwards or clobber a UID a calendar provider already
+  # holds. persistPen's conflict branch now has an explicit merge policy for
+  # both fields — see the comment there.
+  it "keeps the exported SEQUENCE strictly increasing across a stale-tab conflict" do
+    first_ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+    expect(first_ics).to include("SEQUENCE:1")
+    uid_line = first_ics[/UID:.+-dose@counta\.click/]
+
+    # Another device exports twice more (calendarSequence 2, then 3) while
+    # this tab's cached copy is still at 1 — the same stale-tab shape as
+    # above, replayed on a field that must never move backwards.
+    page.evaluate_async_script(<<~JS)
+      (async () => {
+        const [row] = await window.countaTest.rows();
+        const data = await window.countaTest.decryptRow(row);
+        data.calendarSequence = 3;
+        await window.countaTest.writeRow(row, data);
+      })().then(arguments[0])
+    JS
+
+    # This tab exports again. Its cached version is now stale, so this MUST
+    # take the 409 path — asserted below via the actual value, not just
+    # "no error", so a broken merge that never ran shows up as a wrong
+    # number rather than a silently-passing test (AGENTS.md §9.8).
+    second_ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+    expect(second_ics).to include(uid_line) # the UID itself never changes
+    expect(second_ics).to include("SEQUENCE:4") # strictly above the other device's 3
+
+    data = page.evaluate_async_script(<<~JS)
+      window.countaTest.rows()
+        .then(rows => window.countaTest.decryptRow(rows[0]))
+        .then(arguments[0]);
+    JS
+    expect(data["calendarSequence"]).to eq(4)
+  end
+
+  # The other half of the same defect: a pen that predates calendarUid, with
+  # both devices minting their own the first time they export. Without the
+  # fix, whichever device's retry writes last would overwrite the winner's
+  # UID — orphaning any event already imported under it in a real calendar.
+  it "adopts the other device's calendarUid when both devices mint one concurrently" do
+    page.evaluate_async_script(<<~JS)
+      (async () => {
+        const [row] = await window.countaTest.rows();
+        const data = await window.countaTest.decryptRow(row);
+        data.calendarUid = "other-device-uid";
+        data.calendarSequence = 1;
+        await window.countaTest.writeRow(row, data);
+      })().then(arguments[0])
+    JS
+
+    # This tab, unaware, exports for the "first" time too: no calendarUid
+    # locally, so it mints its own — then hits the 409 the write above just
+    # created.
+    ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+
+    expect(ics).to include("UID:counta-other-device-uid-dose@counta.click")
+    expect(ics).to include("SEQUENCE:2") # strictly above theirs, not this tab's own 1
+  end
 end
