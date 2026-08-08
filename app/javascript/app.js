@@ -277,7 +277,13 @@ async function savePenForm() {
     maxDialClicks: p.max_dial_clicks ?? null,
     common: p.common_doses, theme: p.theme,
     history: editingPen ? editingPen.data.history : [],
-    registrationIds: editingPen ? editingPen.data.registrationIds : []
+    registrationIds: editingPen ? editingPen.data.registrationIds : [],
+    // Carried over like history/registrationIds: savePenForm rebuilds the
+    // whole blob on every save (including a plain settings edit), and
+    // calendarUid/calendarSequence (#14) have to survive that or every edit
+    // would silently reset the calendar's supersede tracking.
+    calendarUid: editingPen ? editingPen.data.calendarUid : null,
+    calendarSequence: editingPen ? (editingPen.data.calendarSequence || 0) : 0
   };
 
   // Don't mutate local state until the server has it: a failed save used to
@@ -719,14 +725,36 @@ async function openAccountPanel() {
 }
 
 /* ============ ICS export ============ */
-function downloadIcs() {
+// calendarUid/calendarSequence live in the pen's own encrypted blob, not on
+// the server row: a stable UID that survives the pen row being recreated
+// from a preserved blob, and a counter a client can use to know an export
+// supersedes the last one (RFC 5545 SEQUENCE) — see #14 "Re-export shouldn't
+// duplicate". Minted/bumped here, persisted, THEN handed to buildIcs, so
+// icsPreview (test_hooks.js) sees exactly what a real export would.
+async function buildIcsForExport(now = new Date()) {
+  if (remainingDoses() < 1) return null;
   const d = pen();
-  const ics = buildIcs(d, activePen.id, remainingDoses(), doseClicks,
-    `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`);
+  const snapshotUid = d.calendarUid, snapshotSequence = d.calendarSequence;
+  if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
+  d.calendarSequence = (d.calendarSequence || 0) + 1;
+  try {
+    await persistPen(activePen);
+  } catch (e) {
+    d.calendarUid = snapshotUid;
+    d.calendarSequence = snapshotSequence;
+    throw e;
+  }
+  return buildIcs(d, activePen.id, remainingDoses(), doseClicks,
+    `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`, now);
+}
+
+async function downloadIcs() {
+  const ics = await buildIcsForExport();
   if (!ics) {
     alert(t("errors.nothing_to_schedule"));
     return;
   }
+  const d = pen();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([ ics ], { type: "text/calendar" }));
   a.download = `counta-${d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.ics`;
@@ -919,7 +947,10 @@ function wire() {
   // ICS
   $("export-ics").addEventListener("click", () => $("ics-dlg").showModal());
   $("ics-no").addEventListener("click", () => $("ics-dlg").close());
-  $("ics-yes").addEventListener("click", () => { $("ics-dlg").close(); downloadIcs(); });
+  $("ics-yes").addEventListener("click", () => {
+    $("ics-dlg").close();
+    downloadIcs().catch(e => { console.error(e); alert(t("errors.save_ics")); });
+  });
 
   // account panel
   $("account-btn").addEventListener("click", () => openAccountPanel().catch(e => showError("account-error", e)));
@@ -966,7 +997,7 @@ function wire() {
 // unlock and a snapshot would be null forever.
 if (document.querySelector('meta[name="test-hooks"]')?.content === "true") {
   import("test_hooks").then(({ install }) => install({
-    api, encryptPayload, decryptPayload, buildIcs,
+    api, encryptPayload, decryptPayload, buildIcsForExport,
     dek: () => dek,
     accountId: () => accountId,
     pen: () => pen(),

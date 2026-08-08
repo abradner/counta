@@ -64,7 +64,11 @@ The recall driver is real: finding out your insulin is bad *as you're about to j
 
 ## Reminders **[decided]**
 
-Client-generated **ICS file** (download/share — not a hosted subscription URL, which would hand the schedule to a server): a recurring dose event for the remaining doses in the pen, plus a "buy more <product>" event ~2 doses before run-out. Deterministic VEVENT UIDs per pen so re-export replaces cleanly. Honest caveat in UI: your calendar provider then holds your schedule — that's the user's tradeoff to make.
+Client-generated **ICS file** (download/share — not a hosted subscription URL, which would hand the schedule to a server): a recurring dose event for the remaining doses in the pen, plus a "buy more <product>" event ~2 doses before run-out. Honest caveat in UI: your calendar provider then holds your schedule — that's the user's tradeoff to make.
+
+The dose event is a **timed 5-minute event with a `VALARM` firing at start** (issue #14), not all-day — an all-day event doesn't alert on most clients and can't carry a time. There's no "what time do you dose?" field (that would cost a screen — §2's ease-of-use principle); the moment the user presses export stands in, rounded to the nearest half hour. Times are floating local time (no `TZID`, no UTC `Z`), so a dose at 18:00 stays 18:00 across a DST transition. The refill nudge stays all-day — it's for the week, not a moment.
+
+UIDs are per-pen but not derived from the server row id: `calendarUid` (minted once) and `calendarSequence` (incremented every export, giving RFC 5545 `SEQUENCE` so a client can't ignore an update) live inside the pen's own encrypted blob, alongside dose history. That way a pen recreated from a preserved blob keeps superseding its own old calendar events instead of leaving stale ones behind, without hashing batch/expiry into anything that lands in a third-party calendar.
 
 ## DB hygiene (Rails) **[decided]**
 

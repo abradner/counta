@@ -332,6 +332,7 @@ en:
         Enter how much medicine the pen holds and how many clicks it has —
         counta needs both to convert between them.
       nothing_to_schedule: There are no doses left in this pen to schedule.
+      save_ics: counta couldn’t save this pen’s calendar info, so the export failed. Please try again.
       sign_in_failed: That sign-in didn’t complete. Please try again.
       recovery_mismatch: That account ID and kit don’t match.
       kit_file_invalid: That file doesn’t look like a counta recovery kit.

@@ -10,8 +10,10 @@
 //
 // Note the context is GETTERS, not values: `dek` is null at boot and only set
 // on unlock, so capturing it once would leave every hook holding null forever.
+import { roundToNearestHalfHour } from "dosing_time";
+
 export function install(ctx) {
-  const { api, encryptPayload, decryptPayload, buildIcs } = ctx;
+  const { api, encryptPayload, decryptPayload, buildIcsForExport } = ctx;
   const dek = () => ctx.dek();
 
   async function currentRow() {
@@ -85,12 +87,23 @@ export function install(ctx) {
       return (await decryptPayload(dek(), row.blob)).history;
     },
 
-    // Exact string the ICS download would contain (same code path).
-    icsPreview() {
-      const d = ctx.pen();
-      const clicks = ctx.doseClicks();
-      return buildIcs(d, ctx.activePen().id, ctx.remainingDoses(), clicks,
-        `${ctx.fmtU(ctx.unitsForClicks(clicks))} ${d.unit}`);
+    // Exact string the ICS download would contain (same code path) — mints
+    // calendarUid / bumps calendarSequence and persists them, exactly like a
+    // real export. `nowMs` (epoch ms), if given, pins the "moment of export"
+    // the dosing-time proxy rounds, so specs can assert exact DTSTART/DTEND
+    // without racing the real clock.
+    icsPreview(nowMs) {
+      // Capybara marshals a missing/nil arg as JS `null`, not `undefined` —
+      // treat both as "use the real clock" so buildIcsForExport's own
+      // `now = new Date()` default still applies.
+      return buildIcsForExport(nowMs == null ? undefined : new Date(nowMs));
+    },
+
+    // The dosing-time proxy itself (#14, reused by #37): rounds `nowMs`
+    // (epoch ms) to the nearest half hour, local wall-clock, and returns the
+    // result as epoch ms.
+    roundToNearestHalfHour(nowMs) {
+      return roundToNearestHalfHour(new Date(nowMs)).getTime();
     }
   };
 }
