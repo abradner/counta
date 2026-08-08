@@ -58,6 +58,15 @@ Feature tracking lives in [GitHub issues](https://github.com/abradner/counta/iss
 
 **Anti-roadmap** — standing policy, so it stays here: no weight tracking, symptom dashboards, community feeds, AI coaching, or interaction checkers. Every GLP-1 app does these; they are other ponies' tricks, and most expand the sensitive-data surface the privacy design exists to avoid.
 
+Added 2026-08-09 with the dose plan (#21): **no multi-injection dosing.** The AU product information's top Wegovy maintenance dose is 7.2 mg given as *three separate 2.4 mg injections*. That is not a dial position — it is a procedure, 222 clicks against a 74-click dial, and modelling it means counta reasoning about how many injections make a dose. We're a click counter, not a medical practitioner. The shipped preset stops at 2.4 mg, and a plan step is one dial of one pen.
+
+## Dose plans (#21)
+
+- A plan is **transcription, never suggestion.** counta ships one preset per listed product — the manufacturer's published escalation, labelled with the document and revision it came from — and it is never applied automatically: the setup select defaults to "No plan". counta does not generate, rank, smooth or comment on a ladder, and never tells a user theirs differs from the preset. `spec/i18n_spec.rb` enforces the wording half of that mechanically, with a positive control.
+- **Jurisdiction is declared on the page.** Plan features follow the current **Australian** product information, and the setup card says so. This is not decoration: the AU PI allows five days to catch up a missed dose and says re-initiation "should be considered", while the US label says two days and "reinitiate". One paraphrase cannot be true of both — so counta paraphrases neither, states the user's own gap in days, and links the document it is calibrated to.
+- **Ladders are not required to ascend.** Both labels describe deliberate down-steps (lowering to the previous dose while symptoms settle; dropping from 2.4 mg to 1.7 mg for maintenance, re-escalating later). A step with no dose count is an open-ended hold, which covers "delay escalation" too. Any validation that steps must increase would be a bug, not a tightening.
+- **Numbers stop at the step boundary.** "Doses left" on a planned pen is doses left *at this amount*, and the tile names the amount. Forecasting past a step change would mean guessing what the next strength's pen holds.
+
 ## Tone
 
 All copy descriptive, never prescriptive ("counter will show…", "you dialled…"), per the medical-device boundary noted in `data-privacy.md`. Footer disclaimer stays.

@@ -113,6 +113,26 @@ now branches on `counter_style` and states what the window will actually show.
 Check `counter_style` before writing such copy, and check the arithmetic
 against a pen whose click ratio isn't 1:1.
 
+**The one deliberate exception: a dose plan stores units, not clicks.** Clicks
+are canonical for what *happened*, because a click is a thing you did to one
+specific pen. A titration ladder (`app/javascript/plan.js`, issue #21) is
+*intent*, and intent has to survive moving to a different pen — often a
+different strength, with a different clicks-per-unit ratio. A plan holding
+clicks would silently change the dose the moment the pen changed: 74 clicks is
+2.4 mg on a 9.6 mg pen and 1.2 mg on a 4.8 mg one. So plan steps are
+denominated in the medicine's units and converted through the *active* pen's
+own `clicksFor` at render time. That one choice is why the same code serves
+someone swapping a pen per strength, someone dialling a 2.4 mg pen down to a
+microdose, and someone halving a mid-strength pen.
+
+Two consequences worth knowing before touching that module. It derives the
+current step by **counting doses**, not by the calendar, so a gap can never
+escalate anyone — the conservative reading is structural rather than a rule
+that could have a bug. And it **stops forecasting at a step boundary**:
+costing the next step against this pen's ratio would assume a pen we know
+nothing about until SKUs are modelled (issue #19), so "doses left" on a
+planned pen means "at this amount" and the label says so.
+
 ## Decision 4 — The server owns every date
 
 Dates cross the wire as UTC ISO 8601; the browser only formats them for the
