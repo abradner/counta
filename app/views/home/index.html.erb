@@ -108,6 +108,42 @@
           <option value="3.5"><%= t('ui.setup.frequency_twice_weekly') %></option>
           <option value="14"><%= t('ui.setup.frequency_fortnightly') %></option>
         </select>
+
+        <%# Dose plan (#21). Hidden entirely for a product with no published
+            schedule and no plan already in progress — an empty control would
+            imply a feature that isn't reachable from here. %>
+        <div id="plan-wrap" hidden>
+          <label for="f-plan"><%= t('ui.setup.plan') %></label>
+          <select id="f-plan"></select>
+          <p class="hint"><%= t('ui.setup.plan_jurisdiction') %></p>
+          <%# Almost nobody transcribing a published escalation is on week one
+              — most people find counta partway up the ramp. Asking costs one
+              select for them and nothing at all for someone actually
+              starting, since "just starting" is the default. %>
+          <div id="plan-progress-wrap" hidden>
+            <label for="f-plan-progress"><%= t('ui.setup.plan_progress') %></label>
+            <select id="f-plan-progress"></select>
+            <div id="plan-prior-wrap" hidden>
+              <label for="f-plan-prior" id="plan-prior-label"></label>
+              <input type="number" id="f-plan-prior" inputmode="numeric" min="0" step="1" value="0"
+                     aria-describedby="plan-prior-hint">
+              <p class="hint" id="plan-prior-hint"><%= t('ui.setup.plan_prior_hint') %></p>
+            </div>
+            <p class="hint" id="plan-position" hidden></p>
+          </div>
+          <div id="plan-start-wrap" hidden>
+            <label for="f-plan-start"><%= t('ui.setup.plan_started') %></label>
+            <input type="date" id="f-plan-start">
+            <p class="hint"><%= t('ui.setup.plan_started_hint') %></p>
+          </div>
+          <%# Steps are rendered by app.js and are read-only in this release:
+              editing a ladder step by step is not built yet, and the hint
+              below says so rather than letting the UI imply otherwise. %>
+          <ul class="plan-steps" id="plan-summary" hidden></ul>
+          <p class="hint" id="plan-setup-source" hidden></p>
+          <p class="hint"><%= t('ui.setup.plan_custom_pending') %></p>
+        </div>
+
         <div style="margin-top:16px">
           <button class="btn" id="save-pen"><%= t('ui.setup.save') %></button>
           <button class="btn secondary" id="cancel-setup" hidden><%= t('ui.setup.cancel') %></button>
@@ -136,6 +172,28 @@
             <div class="big" id="readout-big"></div>
             <div class="sub" id="readout-sub"></div>
           </div>
+
+          <%# Dose plan (#21). Facts about this user's own data, plus the
+              document the plan was transcribed from. counta never paraphrases
+              clinical guidance here: the Australian and US product information
+              give different missed-dose rules, so a paraphrase would be wrong
+              in one of them. %>
+          <div id="plan-block" hidden>
+            <p class="plan-line" id="plan-line" aria-live="polite"></p>
+            <div id="plan-dial-warn" class="warn amber" hidden>
+              <span aria-hidden="true">⚠️</span><span id="plan-dial-warn-text"></span>
+            </div>
+            <div id="plan-gap" class="warn amber" hidden>
+              <span aria-hidden="true">⚠️</span>
+              <span>
+                <span id="plan-gap-text"></span>
+                <a id="plan-gap-source" target="_blank" rel="noopener noreferrer" hidden></a>
+                <button class="linklike" id="plan-gap-edit"><%= t('ui.dose.plan_edit') %></button>
+              </span>
+            </div>
+            <p class="hint" id="plan-source" hidden></p>
+          </div>
+
           <label for="f-date"><%= t('ui.dose.date') %></label>
           <input type="date" id="f-date">
           <div style="margin-top:14px">

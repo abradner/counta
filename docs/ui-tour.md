@@ -43,11 +43,53 @@ asked whether its counter shows a readable number, since counta can't know —
 and guessing wrong would tell someone to dial to a number their pen never
 displays.
 
+## Dose plan
+
+Optional, and off by default. counta ships the manufacturer's published
+escalation as a preset so it can be **transcribed accurately**, labelled with
+the document and revision it came from — it never picks a ladder, never rates
+one, and never says yours differs from the preset. The week headings on each
+step are quoted from that document's own table rather than computed, so they
+stay true even for someone who is weeks behind.
+
+![Dose plan](screenshots/05b-dose-plan.png)
+
+Hardly anyone transcribing an escalation is on week one — most people find
+counta partway up the ramp. So the card asks where they are, defaulting to
+"just starting" so a genuinely new user answers nothing extra. The question is
+**which amount you're taking now** and **how many you've already had at it**,
+both facts already known; asking what the *next* dose will be would make the
+user work out whether they're due to step up, which is the thing counta is for.
+Answering from either side of a step boundary gives the same result, so the
+off-by-one reading of the question can't land someone a dose out — and the app
+says the answer back before anything is saved.
+
+Those earlier doses often happened on a starter pen, on tablets, or on a pen
+counta never saw, so they're kept with the **plan**, not written into any pen's
+dose log. The start date accordingly means "when counta starts counting", not
+when the journey began.
+
+![Joining a plan partway](screenshots/05c-dose-plan-partway.png)
+
+The page states which jurisdiction the feature follows. That isn't decoration:
+the Australian product information allows five days to catch up a missed dose
+and says re-initiation "should be considered", while the US label says two days
+and "reinitiate". No single paraphrase is true of both, so counta writes
+neither — it reports your own gap in days and links the document.
+
+Writing a ladder step by step isn't built yet, and the hint says so rather than
+leaving an editable-looking control that isn't.
+
 ## Daily use
 
 The dose screen leads with **clicks**, the thing you do to the pen, with the
 derived milligrams underneath. This pen is `progress`-style, so the copy says
 the window shows no number rather than implying a reading it can't give.
+
+With a plan, the dial opens already set to the plan's next dose, a caption
+under the readout says which step that is, and "doses left" becomes doses left
+*at this amount* — the tile names the amount, because counta stops forecasting
+at a step boundary rather than guessing what the next strength's pen holds.
 
 | Dose screen | Confirm | Calendar export |
 |---|---|---|

@@ -38,7 +38,19 @@ RSpec.describe "Screenshots", type: :system, if: ENV["SCREENSHOTS"] == "1" do
 
     expect(page).to have_css("#setup-card", wait: 15)
     select "Wegovy 2.4 mg (4 doses · 9.6 mg · 3 mL)", from: "f-product"
-    shot("05-pen-setup", height: 1000)
+    shot("05-pen-setup", height: 1300)
+
+    # Transcribe the published escalation, so the tour shows the dose plan on
+    # both the setup card and the dose screen (#21).
+    select "Novo Nordisk published escalation (TGA product information, revised 22 Jun 2026)",
+           from: "f-plan"
+    shot("05b-dose-plan", height: 1460)
+
+    # Most people find counta partway up the ramp, so the tour shows that too.
+    select "I’m taking 1 mg now", from: "f-plan-progress"
+    fill_in "f-plan-prior", with: 2
+    shot("05c-dose-plan-partway", height: 1460)
+    select "Just starting this plan", from: "f-plan-progress"
 
     save_pen(batch: "LP1234", expiry: "2027-06")
     shot("06-dose-screen", height: 1000)

@@ -77,6 +77,104 @@ RSpec.describe "Copy and localisation" do
       "Copy belongs in config/locales, not in a view:\n#{offenders.join("\n")}"
   end
 
+  # Dose-plan copy (#21) must never read as a recommendation. counta
+  # transcribes a ladder the user and their prescriber chose; the moment the
+  # copy says "recommended" or "you should", a click counter has started
+  # giving medical advice — the line docs/design-notes.md "Tone" and
+  # docs/data-privacy.md both draw.
+  #
+  # Mechanical rather than a review convention on purpose (AGENTS.md §10.5).
+  PRESCRIPTIVE = /\b(recommend\w*|standard|official\w*|optimal\w*|should|safe|best dose|correct dose)\b/i
+
+  # Every leaf string whose key path mentions the plan, across both
+  # namespaces. Path-based rather than an explicit list so a key added to the
+  # plan subtree later is covered without anyone remembering to add it here.
+  def plan_copy
+    flat = {}
+    walk = lambda do |node, path|
+      case node
+      when Hash then node.each { |k, v| walk.call(v, path + [ k.to_s ]) }
+      when Array then node.each_with_index { |v, i| walk.call(v, path + [ i.to_s ]) }
+      else flat[path.join(".")] = node.to_s
+      end
+    end
+    %w[ui.setup ui.dose client.plan client.errors client.stats].each do |root|
+      walk.call(I18n.t(root), [ root ])
+    end
+    flat.select { |key, _| key.include?("plan") || key.include?("doses_left_at_step") }
+  end
+
+  it "keeps dose-plan copy free of anything that reads as a recommendation" do
+    # Positive control first, in the same example, so the two can never drift
+    # apart: if the pattern is ever tuned into something that matches nothing,
+    # this fails here rather than leaving the real check silently vacuous.
+    # (AGENTS.md §9.10 — the OTHER copy guard in this file was tuned until its
+    # false positives went quiet, which silenced the true positives too.)
+    controls = [
+      "The recommended escalation is 0.25 mg.",
+      "You should move up to 0.5 mg next week.",
+      "This is the standard ladder.",
+      "The official schedule from the manufacturer.",
+      "This is the safe amount to dial."
+    ]
+    expect(controls.reject { |c| c.match?(PRESCRIPTIVE) }).to be_empty,
+      "The prescriptive-copy guard has stopped catching prescriptive copy."
+    # ...and innocuous copy must NOT trip it, or the guard is noise that will
+    # get tuned away next time it fires.
+    expect("Your plan moves to 1 mg after this.").not_to match(PRESCRIPTIVE)
+
+    expect(plan_copy).not_to be_empty, "plan_copy matched nothing — the guard is scanning the wrong keys."
+    offenders = plan_copy.filter_map { |key, text| "#{key}: #{text}" if text.match?(PRESCRIPTIVE) }
+    expect(offenders).to be_empty,
+      "Dose-plan copy must describe, never recommend:\n#{offenders.join("\n")}"
+  end
+
+  # The plural-by-concatenation guard below catches `n + (n === 1 ? "" : "s")`
+  # in JS. This catches the same class one layer up, in the copy itself: a
+  # string that interpolates a bare number next to a unit noun ("%{days} days
+  # ago") reads "1 days ago" in English and cannot be translated into a
+  # language with more than two plural forms. The count has to come from a
+  # pluralised subtree, so those placeholders must not appear as raw text.
+  # The shape is specifically a placeholder immediately followed by the unit
+  # noun it counts. A placeholder that merely NAMES a unit is fine when what
+  # gets substituted is already a pluralised phrase ("%{units} %{unit} ·
+  # %{doses}"), and leaves inside a one/other subtree are the correct home for
+  # a raw count and are exempt below.
+  # Two precise shapes rather than one loose one, because a loose "placeholder
+  # followed by a unit noun" also matches innocent copy like "%{unit} step" and
+  # the tuning that follows is how a guard gets quietly disarmed (§9.10):
+  #   - an explicit count placeholder followed by a unit noun, and
+  #   - any placeholder followed by the very noun it is named after.
+  # Kept as two patterns rather than one Regexp.union: union renumbers capture
+  # groups, which silently repoints the \1 backreference below at the other
+  # branch's group and makes the whole check stop matching.
+  BARE_COUNT_UNIT = /%\{(?:count|number|n|total)\}\s+(?:days?|weeks?|months?|doses?|clicks?|steps?)\b/i
+  PLACEHOLDER_THEN_OWN_NOUN = /%\{(\w+?)s?\}\s+\1s?\b/i
+  PLURAL_LEAF = /\.(one|other|zero|two|few|many)\z/
+
+  def counted_bare?(text)
+    text.match?(BARE_COUNT_UNIT) || text.match?(PLACEHOLDER_THEN_OWN_NOUN)
+  end
+
+  it "never interpolates a bare count next to a unit in dose-plan copy" do
+    # Controls in the same example (§9.10). The first pair is the defect this
+    # exists for; the second pair is what the pattern was narrowed to allow, so
+    # the narrowing itself is pinned and can't quietly widen into "matches
+    # nothing".
+    expect(counted_bare?("Your last dose was %{days} days ago.")).to be true
+    expect(counted_bare?("%{doses} doses left at this amount")).to be true
+    expect(counted_bare?("%{count} weeks at this amount")).to be true
+    expect(counted_bare?("Your last recorded dose was %{date} — %{ago}.")).to be false
+    expect(counted_bare?("%{units} %{unit} · %{doses}")).to be false
+    expect(counted_bare?("This plan has a %{units} %{unit} step")).to be false
+
+    offenders = plan_copy
+      .reject { |key, _| key.match?(PLURAL_LEAF) }
+      .filter_map { |key, text| "#{key}: #{text}" if counted_bare?(text) }
+    expect(offenders).to be_empty,
+      "Counted quantities belong in a one/other subtree, not interpolated raw:\n#{offenders.join("\n")}"
+  end
+
   it "builds plurals with count, never by concatenating an s" do
     # The single most common localisation blocker in the original copy: many
     # languages need more than two forms, so `n + (n === 1 ? "" : "s")` is

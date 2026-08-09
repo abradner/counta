@@ -33,6 +33,14 @@ module CountaFlows
     expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
   end
 
+  # Setting a custom capacity on a listed product, so a spec can give two pens
+  # of the same product different clicks-per-unit ratios — the thing a plan
+  # has to survive when someone moves to a different-strength pen.
+  def use_custom_capacity(units)
+    select "Custom…", from: "f-capacity"
+    fill_in "f-cap-units", with: units
+  end
+
   def log_dose
     click_button "Dose now"
     within("#confirm-dlg") { click_button "Yes, I dosed" }

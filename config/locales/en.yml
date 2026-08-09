@@ -88,6 +88,27 @@ en:
       frequency_daily: Every day
       frequency_twice_weekly: Twice a week
       frequency_fortnightly: Every 14 days
+      # Dose plan (#21). counta transcribes a ladder; it never proposes one.
+      # Nothing in this subtree may read as a recommendation — see the banned
+      # word guard in spec/i18n_spec.rb, which exists because copy is the
+      # place a click counter quietly turns into medical advice.
+      plan: Dose plan
+      plan_jurisdiction: >-
+        counta’s dose-plan features follow the current Australian product
+        information for the listed medicine. counta copies a published schedule
+        out for you to check against your prescription — it doesn’t pick one,
+        and it isn’t medical advice.
+      plan_progress: Where are you up to?
+      plan_prior_hint: >-
+        Doses you’ve already had, not counting the next one. They can have been
+        on any pen, or none — counta keeps this with your plan, not with a pen.
+      plan_started: counta starts counting on
+      plan_started_hint: >-
+        Doses you record from this date on are counted against your plan. Ones
+        from before it belong to whatever you were doing then.
+      plan_custom_pending: >-
+        Writing your own steps isn’t built yet. For now counta can transcribe a
+        published schedule, or leave this pen with no plan.
       save: Save pen
       cancel: Cancel
       archive: Archive this pen
@@ -104,6 +125,7 @@ en:
       date: Date of dose
       recent: Recent doses
       export: Add dose reminders to calendar
+      plan_edit: Edit your plan
       edit: Edit this pen’s data
       archive: Archive this pen
       unarchive: Unarchive this pen
@@ -262,10 +284,59 @@ en:
       confirm_sub: "≈ %{units} %{unit} · %{date}"
       today: today
 
+    # Dose plan (#21). Two rules hold everywhere in this subtree:
+    #   1. Say only what is true of THIS user's own data, or quote the cited
+    #      document. Never paraphrase clinical guidance — the Australian and
+    #      US product information give different missed-dose windows and
+    #      different wording for several missed doses, so one paraphrase would
+    #      be wrong in one of them.
+    #   2. Never imply counta chose, endorsed or rated a ladder.
+    # spec/i18n_spec.rb enforces the wording half of this mechanically.
+    plan:
+      option_none: No plan — same dose each time
+      option_keep: "Keep: %{label}"
+      option_continue: "Continue “%{label}” from your other pen"
+      option_preset: "%{label} (%{source})"
+      progress_starting: Just starting this plan
+      progress_at: "I’m taking %{units} %{unit} now"
+      prior_label: "Doses already taken at %{units} %{unit}"
+      position: "counta will start you at %{units} %{unit} · %{remaining}."
+      step_number: "Step %{number} of %{total}"
+      summary_amount: "%{units} %{unit} · %{doses}"
+      doses_count:
+        one: 1 dose
+        other: "%{count} doses"
+      ongoing: ongoing, no end date
+      complete: every step recorded
+      doses_left_at_step:
+        one: 1 more dose at this amount
+        other: "%{count} more doses at this amount"
+      # A bare "%{days} days ago" is the untranslatable shape this file's
+      # header warns about — it reads "1 days ago" in English and has no room
+      # for languages with more than two plural forms. Interpolated as a
+      # pluralised phrase instead, which is also why the i18n guard forbids a
+      # raw %{days} anywhere in this subtree.
+      days_ago:
+        one: 1 day ago
+        other: "%{count} days ago"
+      step_line: "%{label} · %{units} %{unit} · %{remaining}"
+      moves_next: After that your plan moves to %{units} %{unit}.
+      undeliverable: >-
+        Your plan’s next dose is %{units} %{unit}. This pen’s dial reaches
+        %{max} %{unit}.
+      source_line: Plan steps transcribed from %{source}.
+      gap: >-
+        Your last recorded dose was %{date} — %{ago}. Your plan expects one
+        every %{frequency}.
+      gap_read_source: "Read %{source}"
+
     stats:
       units_left: "%{unit} left"
       units_left_ml: "%{unit} left · %{ml} mL"
       doses_left: doses left
+      # A pen following a plan reports doses left AT THE CURRENT STEP, and the
+      # label names the amount so the number can't be read as a total.
+      doses_left_at_step: "doses at %{units} %{unit}"
       clicks_left: clicks left
 
     warnings:
@@ -332,6 +403,23 @@ en:
         Enter how much medicine the pen holds and how many clicks it has —
         counta needs both to convert between them.
       nothing_to_schedule: There are no doses left in this pen to schedule.
+      plan_units: Every plan step needs an amount greater than zero.
+      plan_empty: That plan has no steps in it, so counta can’t tell what your next dose would be.
+      plan_prior_negative: The number of doses you’ve already taken can’t be less than zero.
+      plan_prior_range:
+        one: >-
+          This plan has 1 dose at %{units} %{unit}, so counta can’t record more
+          than that as already taken.
+        other: >-
+          This plan has %{count} doses at %{units} %{unit}, so counta can’t
+          record more than that as already taken.
+      plan_tiny: >-
+        This plan has a %{units} %{unit} step, which is less than one click on
+        this pen — check the pen’s capacity and total clicks above.
+      plan_dial: >-
+        This plan has a %{units} %{unit} step, but this pen’s dial only reaches
+        %{max} %{unit}. Pick a plan this pen can dial, or set the pen up with
+        the capacity it actually holds.
       save_ics: counta couldn’t save this pen’s calendar info, so the export failed. Please try again.
       sign_in_failed: That sign-in didn’t complete. Please try again.
       recovery_mismatch: That account ID and kit don’t match.

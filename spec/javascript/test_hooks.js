@@ -11,6 +11,8 @@
 // Note the context is GETTERS, not values: `dek` is null at boot and only set
 // on unlock, so capturing it once would leave every hook holding null forever.
 import { roundToNearestHalfHour } from "dosing_time";
+import { stepIndexFor, daysBetween, missedDosesSince, planStepError,
+         nextDoseStep, dosesLeftAtStep, reachableSteps, priorDosesFor } from "plan";
 
 export function install(ctx) {
   const { api, encryptPayload, decryptPayload, buildIcsForExport } = ctx;
@@ -74,6 +76,17 @@ export function install(ctx) {
       return writeAsOtherDevice(await currentRow(), data);
     },
 
+    // writeRow always targets the first row; specs with several pens need to
+    // say which one.
+    async writeRowAt(index, data) {
+      const rows = await api("/api/pens");
+      return writeAsOtherDevice(rows[index], data);
+    },
+    async decryptRowAt(index) {
+      const rows = await api("/api/pens");
+      return decryptPayload(dek(), rows[index].blob);
+    },
+
     // Another device archives the pen; this tab's cached state stays stale.
     async archiveElsewhere() {
       const row = await currentRow();
@@ -98,6 +111,59 @@ export function install(ctx) {
       // `now = new Date()` default still applies.
       return buildIcsForExport(nowMs == null ? undefined : new Date(nowMs));
     },
+
+    // The active pen's plan as stored (issue #21), and the derived number the
+    // dose screen shows — "doses left at this step" once a plan exists.
+    plan: () => ctx.pen()?.plan ?? null,
+
+    // Appends a dose to a SPECIFIC pen row, as another device would. The
+    // single-pen appendDose above always targets the first row, which can't
+    // express "a dose on the insulin pen must not advance the Wegovy ladder".
+    async appendDoseTo(index, date, clickCount) {
+      const rows = await api("/api/pens");
+      const row = rows[index];
+      const data = await decryptPayload(dek(), row.blob);
+      data.history.push({ id: crypto.randomUUID(), date, clicks: clickCount,
+                          units: clickCount * data.capUnits / data.totalClicks });
+      await api(`/api/pens/${row.id}`, { method: "PUT", body: {
+        blob: await encryptPayload(dek(), data),
+        archived: row.archived_at != null,
+        expected_updated_at: row.updated_at
+      } });
+      return data.history.length;
+    },
+
+    // plan.js's pure derivations, probed directly. They are integer/string
+    // arithmetic with no DOM and no I/O, so exercising the edge cases here is
+    // both exact and far cheaper than driving each one through the UI.
+    planStepIndex: (steps, n) => stepIndexFor({ steps }, n),
+    // Positions a person can claim to be on. The shipped ladder ends
+    // open-ended, so the filter is a no-op there and only a hand-written
+    // ladder with an open-ended step in the MIDDLE exercises it.
+    planReachableSteps: steps => reachableSteps(steps).length,
+    planPriorDosesFor: (steps, index, atStep) => priorDosesFor(steps, index, atStep),
+    // All three branches of the step validator, including the null
+    // maxDialClicks one (a custom pen's dial limit is unknown, not
+    // unlimited), which no listed product can reach through the UI today.
+    planStepError: (units, maxDialClicks, unitsPerClick) =>
+      planStepError({ units }, { clicksFor: u => Math.round(u / unitsPerClick), maxDialClicks }),
+    // A completed finite ladder has nothing further to offer: stepIndexFor
+    // holds at the last step, so without the `complete` flag the boundary
+    // check can never fire and the count runs on until the pen empties.
+    planDosesLeftAt: (steps, taken, remainingClicks, unitsPerClick) => {
+      const plan = { id: "probe", startedOn: "2000-01-01", steps };
+      const pens = [ { data: { plan, history: Array.from({ length: taken },
+        (_, i) => ({ id: String(i), date: "2020-01-01", clicks: 1 })) } } ];
+      return {
+        left: dosesLeftAtStep(plan, pens, {
+          clicksFor: u => Math.round(u / unitsPerClick), remainingClicks
+        }),
+        complete: nextDoseStep(plan, pens)?.complete ?? null
+      };
+    },
+    planDaysBetween: (fromISO, toISO) => daysBetween(fromISO, toISO),
+    planMissedDoses: (lastISO, todayISO, freqDays) =>
+      missedDosesSince(lastISO, todayISO, freqDays),
 
     // The dosing-time proxy itself (#14, reused by #37): rounds `nowMs`
     // (epoch ms) to the nearest half hour, local wall-clock, and returns the

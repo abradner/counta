@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_04_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_09_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -55,6 +55,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_140000) do
     t.decimal "default_freq_days"
     t.integer "max_dial_clicks"
     t.string "name", null: false
+    t.jsonb "plan_presets", default: [], null: false
     t.string "strength", default: "", null: false
     t.jsonb "theme", default: {}, null: false
     t.integer "total_clicks"

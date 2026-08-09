@@ -10,6 +10,10 @@ module Api
           capacity_units: p.capacity_units&.to_f, capacity_ml: p.capacity_ml&.to_f,
           total_clicks: p.total_clicks, max_dial_clicks: p.max_dial_clicks,
           common_doses: p.common_doses, default_freq_days: p.default_freq_days&.to_f,
+          # Dose-plan presets (#21): public reference data, like common_doses.
+          # A user's own plan never comes from here — it lives in their
+          # encrypted pen blob and the server never sees it.
+          plan_presets: p.plan_presets,
           theme: p.theme
         }
       }
