@@ -60,6 +60,13 @@ Feature tracking lives in [GitHub issues](https://github.com/abradner/counta/iss
 
 Added 2026-08-09 with the dose plan (#21): **no multi-injection dosing.** The AU product information's top Wegovy maintenance dose is 7.2 mg given as *three separate 2.4 mg injections*. That is not a dial position — it is a procedure, 222 clicks against a 74-click dial, and modelling it means counta reasoning about how many injections make a dose. We're a click counter, not a medical practitioner. The shipped preset stops at 2.4 mg, and a plan step is one dial of one pen.
 
+## Next-dose forecast (#37)
+
+- **One notion of dosing time, in one function.** `dosing_time.js#dosingTime` is what both the on-screen forecast and the calendar export call. Pressing "Dose now" is the best observation counta can get without asking a question nobody wants — the person is dosing as they press it — so that moment, rounded to the half hour, is stored against the dose as a wall-clock `HH:MM` and preferred everywhere. With nothing observed yet it falls back to #14's original proxy, the moment you're here now, and the copy says it's a guess.
+- **Stored as wall-clock, never an instant.** "18:00" stays 18:00 across a daylight-saving change and across a move to another timezone, which an instant would not (§9.6) — the same reason #14's ICS uses floating local time.
+- **Backdated doses record no time.** A dose entered for last Tuesday wasn't taken at this moment; stamping the present on it would invent an observation that the calendar then sets real reminders from.
+- **The amount degrades honestly.** The plan supplies it while the ladder has something left to say; otherwise the copy states it's a repeat of the last dose rather than implying a plan exists.
+
 ## Dose plans (#21)
 
 - A plan is **transcription, never suggestion.** counta ships one preset per listed product — the manufacturer's published escalation, labelled with the document and revision it came from — and it is never applied automatically: the setup select defaults to "No plan". counta does not generate, rank, smooth or comment on a ladder, and never tells a user theirs differs from the preset. `spec/i18n_spec.rb` enforces the wording half of that mechanically, with a positive control.

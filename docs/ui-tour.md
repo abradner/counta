@@ -91,6 +91,22 @@ under the readout says which step that is, and "doses left" becomes doses left
 *at this amount* — the tile names the amount, because counta stops forecasting
 at a step boundary rather than guessing what the next strength's pen holds.
 
+Once there's a dose to count forward from, two more lines appear: when the next
+one falls due, and what it will be. The day is the last dose plus the pen's
+cadence; the amount comes from the plan when there is one, and otherwise says
+plainly that it's a repeat of last time rather than implying a schedule nobody
+set up.
+
+The **time** is the same proxy the calendar uses, and both read it from one
+function so they can't name different times. Pressing "Dose now" is someone
+dosing as they press it, so that moment — rounded to the half hour — is kept
+with the dose and read back here. Before counta has seen a dose it guesses from
+the clock and says that's what it's doing. Backdated doses record no time: a
+dose entered for last Tuesday wasn't taken at this moment, and the calendar
+sets real reminders from this.
+
+![Next-dose forecast](screenshots/06b-next-dose-forecast.png)
+
 | Dose screen | Confirm | Calendar export |
 |---|---|---|
 | ![Dose screen](screenshots/06-dose-screen.png) | ![Confirm](screenshots/07-confirm-dose.png) | ![Calendar export](screenshots/08-calendar-export.png)|
