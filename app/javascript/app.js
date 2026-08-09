@@ -11,7 +11,8 @@ import { PrfUnsupportedError } from "passkeys";
 import { buildIcs } from "ics";
 import {
   currentPlan, nextDoseStep, dosesLeftAtStep, missedDoses, lastDoseDate,
-  daysBetween, stepUndeliverable, planStepError, clicksForPen, isNewerRevision
+  daysBetween, stepUndeliverable, planStepError, clicksForPen, isNewerRevision,
+  reachableSteps, priorDosesFor
 } from "plan";
 import { t, clicks, tNodes } from "i18n";
 
@@ -370,9 +371,64 @@ function donorPlan(productKey) {
 // Default start date for a newly transcribed plan: the pen's earliest recorded
 // dose if it has any, otherwise today. A local calendar date throughout —
 // never toISOString() (AGENTS.md §9.6).
+//
+// For someone joining partway up the ladder it is always today, because the
+// date means "when counta starts counting", not "when the journey began". The
+// doses before that are carried as `priorDoses`, not as a backdated window.
 function planStartDefault() {
+  if (priorDosesFromForm() > 0) return todayISO();
   const history = editingPen?.data?.history ?? [];
   return history.length ? byDate(history)[0].date : todayISO();
+}
+
+// The steps of the preset currently selected, or null when the form isn't
+// transcribing one. Shared by the progress control and the plan it builds so
+// the two can't disagree about the ladder.
+function selectedPresetSteps() {
+  const sel = $("f-plan").value;
+  if (!sel.startsWith("preset:")) return null;
+  const preset = planPresetsFor($("f-product").value).find(p => `preset:${p.key}` === sel);
+  return preset ? preset.steps.map(s => ({
+    units: s.units,
+    doses: s.doses ?? null,
+    // Quoted from the source document's own table, so week wording can be
+    // displayed without ever computing a week number from the calendar.
+    sourceLabel: s.source_label ?? null
+  })) : null;
+}
+
+// Doses taken before counta started counting, from the two progress controls.
+//
+// The question asked is "which amount are you taking now" plus "how many have
+// you already had at it", both of which are facts the person already knows.
+// The alternative framing — what their NEXT dose will be — makes them work out
+// whether they are due to step up, which is the one thing this feature exists
+// to work out for them.
+function priorDosesFromForm() {
+  const steps = selectedPresetSteps();
+  const index = $("f-plan-progress").value;
+  if (!steps || index === "") return 0;
+  return priorDosesFor(steps, parseInt(index, 10), parseInt($("f-plan-prior").value, 10) || 0);
+}
+
+// Someone can't have had more doses at an amount than the ladder has at it.
+// Refused rather than clamped: silently reducing a number the user typed about
+// their own medication would move them to a step they didn't choose.
+function planProgressError() {
+  const steps = selectedPresetSteps();
+  const index = $("f-plan-progress").value;
+  if (!steps || index === "") return null;
+  const step = steps[parseInt(index, 10)];
+  const atStep = parseInt($("f-plan-prior").value, 10) || 0;
+  if (atStep < 0) return t("errors.plan_prior_negative");
+  if (step?.doses != null && atStep > step.doses) {
+    return t("errors.plan_prior_range", {
+      units: fmtUnits(step.units, productByKey($("f-product").value).decimals),
+      unit: productByKey($("f-product").value).unit,
+      count: step.doses
+    });
+  }
+  return null;
 }
 
 function buildPlanSelect(key) {
@@ -393,6 +449,9 @@ function buildPlanSelect(key) {
   // to another pen, and syncPlanUi only fills a blank one — so without this a
   // second pen's new plan would silently inherit the first pen's start date.
   $("f-plan-start").value = "";
+  delete $("f-plan-start").dataset.touched;
+  $("f-plan-progress").value = "";
+  $("f-plan-prior").value = "0";
 
   // Nothing to offer, nothing to show: an unlisted pen with no published
   // schedule and no plan in progress gets no plan section at all rather than
@@ -436,13 +495,13 @@ function planFromSetupForm() {
     // plan was actually transcribed from even after the row is revised.
     source: preset.source,
     startedOn: $("f-plan-start").value || planStartDefault(),
-    steps: preset.steps.map(s => ({
-      units: s.units,
-      doses: s.doses ?? null,
-      // Quoted from the source document's own table, so week wording can be
-      // displayed without ever computing a week number from the calendar.
-      sourceLabel: s.source_label ?? null
-    }))
+    // Doses taken before counta existed for this person. On the PLAN, never on
+    // a pen: they were often taken on a starter pen, on tablets, or on a pen
+    // counta was never told about, so writing them into some pen's dose log
+    // would be recording events that pen never saw. Travels verbatim with the
+    // plan onto the next pen, where it is added once rather than per pen.
+    priorDoses: priorDosesFromForm(),
+    steps: selectedPresetSteps()
   };
 }
 
@@ -459,8 +518,15 @@ function planSourceLink(source) {
 
 function syncPlanUi() {
   const creating = $("f-plan").value.startsWith("preset:");
+  $("plan-progress-wrap").hidden = !creating;
+  buildPlanProgress();
   $("plan-start-wrap").hidden = !creating;
-  if (creating && !$("f-plan-start").value) $("f-plan-start").value = planStartDefault();
+  // Recomputed rather than filled-once, because choosing a position partway up
+  // the ladder changes what the start date means: today, not the journey's
+  // beginning. A date the user has actually edited is left alone.
+  if (creating && !$("f-plan-start").dataset.touched) {
+    $("f-plan-start").value = planStartDefault();
+  }
 
   const plan = planFromSetupForm();
   const list = $("plan-summary");
@@ -489,6 +555,59 @@ function syncPlanUi() {
     $("plan-setup-source").replaceChildren(
       ...tNodes("plan.source_line", { source: planSourceLink(plan.source) }));
   }
+
+  // Say back where this lands, in the app's own words. The whole risk in
+  // asking "how many have you had at this amount" is the reader being a dose
+  // out either way, and a plain restatement of the answer is the cheapest way
+  // to make that visible before it is saved rather than after.
+  const position = plan && priorDosesFromForm() > 0 ? nextDoseStep(plan, []) : null;
+  $("plan-position").hidden = !position;
+  if (position) {
+    const p = productByKey($("f-product").value);
+    $("plan-position").textContent = t("plan.position", {
+      units: fmtUnits(position.step.units, p.decimals),
+      unit: p.unit,
+      remaining: position.complete
+        ? t("plan.complete")
+        : position.dosesLeftAtStep == null
+          ? t("plan.ongoing")
+          : t("plan.doses_left_at_step", { count: position.dosesLeftAtStep })
+    });
+  }
+}
+
+// Where in the ladder someone already is. Only the steps they could actually
+// be on: an open-ended step never ends, so nothing after one is reachable.
+function buildPlanProgress() {
+  const steps = selectedPresetSteps();
+  const sel = $("f-plan-progress");
+  const p = productByKey($("f-product").value);
+  const previous = sel.value;
+
+  sel.innerHTML = "";
+  sel.append(new Option(t("plan.progress_starting"), ""));
+  if (steps) {
+    reachableSteps(steps).forEach((step, i) =>
+      sel.append(new Option(
+        t("plan.progress_at", { units: fmtUnits(step.units, p.decimals), unit: p.unit }), String(i))));
+  }
+  // Preserve the choice across an unrelated re-render, but never carry it onto
+  // a different ladder where the index would mean a different amount.
+  sel.value = [ ...sel.options ].some(o => o.value === previous) ? previous : "";
+
+  const chosen = sel.value === "" ? null : steps?.[parseInt(sel.value, 10)];
+  $("plan-prior-wrap").hidden = !chosen;
+  if (!chosen) {
+    $("f-plan-prior").value = "0";
+    return;
+  }
+  // The label names the amount, so a screen reader user hears which dose the
+  // number belongs to rather than a bare "how many".
+  $("plan-prior-label").textContent = t("plan.prior_label", {
+    units: fmtUnits(chosen.units, p.decimals), unit: p.unit
+  });
+  if (chosen.doses == null) $("f-plan-prior").removeAttribute("max");
+  else $("f-plan-prior").max = String(chosen.doses);
 }
 
 // Every check a plan gets, and there are deliberately only two. See
@@ -559,6 +678,11 @@ async function savePenForm() {
   const totalClicks = parseInt($("f-clicks").value, 10);
   if (!capUnits || !totalClicks) {
     alert(t("errors.capacity_required"));
+    return;
+  }
+  const progressError = planProgressError();
+  if (progressError) {
+    alert(progressError);
     return;
   }
   const plan = planFromSetupForm();
@@ -1301,7 +1425,14 @@ function wire() {
   });
   // dose plan
   $("f-plan").addEventListener("change", syncPlanUi);
-  $("f-plan-start").addEventListener("change", syncPlanUi);
+  $("f-plan-progress").addEventListener("change", syncPlanUi);
+  $("f-plan-prior").addEventListener("input", syncPlanUi);
+  $("f-plan-start").addEventListener("change", e => {
+    // Marked as the user's own once they touch it, so the start date stops
+    // being recomputed underneath them when they revise their position.
+    e.target.dataset.touched = "true";
+    syncPlanUi();
+  });
   // The gap notice's only action: open this pen's settings, where the plan is.
   // counta doesn't change the plan itself — that's between the user and their
   // prescriber.

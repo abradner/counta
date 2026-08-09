@@ -98,7 +98,14 @@ en:
         information for the listed medicine. counta copies a published schedule
         out for you to check against your prescription — it doesn’t pick one,
         and it isn’t medical advice.
-      plan_started: Plan started on
+      plan_progress: Where are you up to?
+      plan_prior_hint: >-
+        Doses you’ve already had, not counting the next one. They can have been
+        on any pen, or none — counta keeps this with your plan, not with a pen.
+      plan_started: counta starts counting on
+      plan_started_hint: >-
+        Doses you record from this date on are counted against your plan. Ones
+        from before it belong to whatever you were doing then.
       plan_custom_pending: >-
         Writing your own steps isn’t built yet. For now counta can transcribe a
         published schedule, or leave this pen with no plan.
@@ -290,6 +297,10 @@ en:
       option_keep: "Keep: %{label}"
       option_continue: "Continue “%{label}” from your other pen"
       option_preset: "%{label} (%{source})"
+      progress_starting: Just starting this plan
+      progress_at: "I’m taking %{units} %{unit} now"
+      prior_label: "Doses already taken at %{units} %{unit}"
+      position: "counta will start you at %{units} %{unit} · %{remaining}."
       step_number: "Step %{number} of %{total}"
       summary_amount: "%{units} %{unit} · %{doses}"
       doses_count:
@@ -394,6 +405,14 @@ en:
       nothing_to_schedule: There are no doses left in this pen to schedule.
       plan_units: Every plan step needs an amount greater than zero.
       plan_empty: That plan has no steps in it, so counta can’t tell what your next dose would be.
+      plan_prior_negative: The number of doses you’ve already taken can’t be less than zero.
+      plan_prior_range:
+        one: >-
+          This plan has 1 dose at %{units} %{unit}, so counta can’t record more
+          than that as already taken.
+        other: >-
+          This plan has %{count} doses at %{units} %{unit}, so counta can’t
+          record more than that as already taken.
       plan_tiny: >-
         This plan has a %{units} %{unit} step, which is less than one click on
         this pen — check the pen’s capacity and total clicks above.

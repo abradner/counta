@@ -116,9 +116,25 @@
           <label for="f-plan"><%= t('ui.setup.plan') %></label>
           <select id="f-plan"></select>
           <p class="hint"><%= t('ui.setup.plan_jurisdiction') %></p>
+          <%# Almost nobody transcribing a published escalation is on week one
+              — most people find counta partway up the ramp. Asking costs one
+              select for them and nothing at all for someone actually
+              starting, since "just starting" is the default. %>
+          <div id="plan-progress-wrap" hidden>
+            <label for="f-plan-progress"><%= t('ui.setup.plan_progress') %></label>
+            <select id="f-plan-progress"></select>
+            <div id="plan-prior-wrap" hidden>
+              <label for="f-plan-prior" id="plan-prior-label"></label>
+              <input type="number" id="f-plan-prior" inputmode="numeric" min="0" step="1" value="0"
+                     aria-describedby="plan-prior-hint">
+              <p class="hint" id="plan-prior-hint"><%= t('ui.setup.plan_prior_hint') %></p>
+            </div>
+            <p class="hint" id="plan-position" hidden></p>
+          </div>
           <div id="plan-start-wrap" hidden>
             <label for="f-plan-start"><%= t('ui.setup.plan_started') %></label>
             <input type="date" id="f-plan-start">
+            <p class="hint"><%= t('ui.setup.plan_started_hint') %></p>
           </div>
           <%# Steps are rendered by app.js and are read-only in this release:
               editing a ladder step by step is not built yet, and the hint

@@ -44,9 +44,15 @@ RSpec.describe "Dose plan", type: :system do
   # A Wegovy pen carrying the published escalation. `started` backdates the
   # plan's start, which matters whenever a spec needs doses to fall INSIDE the
   # plan: a dose earlier than the start date is deliberately not a plan dose.
-  def save_planned_wegovy(batch: "LP1234", started: nil)
+  # `at`/`taken` answer the mid-journey question the setup card asks: which
+  # amount you're taking now, and how many you've already had at it.
+  def save_planned_wegovy(batch: "LP1234", started: nil, at: nil, taken: 0)
     select WEGOVY, from: "f-product"
     select PRESET, from: "f-plan"
+    if at
+      select "I’m taking #{at} now", from: "f-plan-progress"
+      fill_in "f-plan-prior", with: taken
+    end
     if started
       page.execute_script(
         "document.getElementById('f-plan-start').value = arguments[0];" \
@@ -130,6 +136,155 @@ RSpec.describe "Dose plan", type: :system do
       # plus the archive marker, and that is the whole of it.
       columns = Pen.first.attributes.except("blob").to_s
       expect(columns).not_to include("plan", "0.25", "escalation")
+    end
+  end
+
+  # Hardly anyone transcribing a published escalation is on week one — most
+  # people find counta partway up the ramp, and the doses behind them were
+  # often taken on a starter pen, on tablets, or on a pen counta never saw.
+  # Those are plan history, not pen history, so they are carried as a count on
+  # the plan rather than backdated into some pen's dose log.
+  describe "joining a plan partway through" do
+    it "costs someone who really is starting nothing at all" do
+      # Negative control for everything below: the extra question defaults to
+      # the beginning, the count input stays out of the way until it's needed,
+      # and the saved plan carries no head start.
+      select WEGOVY, from: "f-product"
+      select PRESET, from: "f-plan"
+      expect(page).to have_select("f-plan-progress", selected: "Just starting this plan")
+      expect(page).to have_css("#plan-prior-wrap", visible: :hidden)
+
+      save_pen(batch: "NEW1", expiry: "2027-06")
+      expect(stored_pen["plan"]["priorDoses"]).to eq(0)
+      expect(find("#plan-line").text).to eq("Weeks 1–4 · 0.25 mg · 4 more doses at this amount")
+    end
+
+    it "offers every step of the published ladder as a position" do
+      select WEGOVY, from: "f-product"
+      select PRESET, from: "f-plan"
+      expect(page).to have_select("f-plan-progress", options: [
+        "Just starting this plan",
+        "I’m taking 0.25 mg now", "I’m taking 0.5 mg now", "I’m taking 1 mg now",
+        "I’m taking 1.7 mg now", "I’m taking 2.4 mg now"
+      ])
+    end
+
+    it "starts on the step the person says they are on" do
+      # Two full steps behind (4 + 4) plus two doses at 1 mg = 10 doses in.
+      save_planned_wegovy(at: "1 mg", taken: 2)
+
+      expect(find("#plan-line").text).to eq("Weeks 9–12 · 1 mg · 2 more doses at this amount")
+      # ...and the dial opens on 1 mg, which is 31 clicks on this pen — not the
+      # 8 clicks of a ladder read from the beginning.
+      expect(find("#readout-big")).to have_text("31 clicks")
+      expect(find("#stats .stat:nth-child(2) .k").text).to eq("doses at 1 mg")
+      expect(stored_pen["plan"]["priorDoses"]).to eq(10)
+    end
+
+    it "counts logged doses on top of the ones already taken" do
+      save_planned_wegovy(at: "1 mg", taken: 2)
+      2.times { log_dose }
+      # 10 behind + 2 logged = 12, which is the end of the 1 mg step.
+      expect(find("#plan-line").text).to eq("Weeks 13–16 · 1.7 mg · 4 more doses at this amount")
+    end
+
+    it "starts counting today rather than backdating onto a pen's own history" do
+      # The dangerous case, and the only one where the default is load-bearing:
+      # a pen that ALREADY has doses. Left to its usual rule the plan would
+      # start at that pen's earliest dose, and those doses would then be
+      # counted on top of the head start the person just stated — the same
+      # doses twice, moving them up the ladder.
+      save_planned_wegovy(batch: "HAD", started: browser_today - 60)
+      page.evaluate_async_script(<<~JS, (browser_today - 50).iso8601, (browser_today - 40).iso8601, (browser_today - 30).iso8601)
+        (async () => {
+          for (const d of [ arguments[0], arguments[1], arguments[2] ]) {
+            await window.countaTest.appendDoseTo(0, d, 8);
+          }
+        })().then(arguments[3])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      click_button "Edit this pen’s data"
+      select PRESET, from: "f-plan" # re-transcribe, now saying where they are
+      select "I’m taking 0.5 mg now", from: "f-plan-progress"
+      fill_in "f-plan-prior", with: 1
+      click_button "Save pen"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      expect(stored_pen["plan"]["startedOn"]).to eq(browser_today.iso8601)
+      # Five doses in (4 + 1), not eight: the pen's three older doses belong to
+      # what came before, and the head start already accounts for them.
+      expect(find("#plan-line").text).to eq("Weeks 5–8 · 0.5 mg · 3 more doses at this amount")
+    end
+
+    it "carries the head start onto the next pen without counting it twice" do
+      save_planned_wegovy(batch: "PENA", at: "1 mg", taken: 2)
+      2.times { log_dose } # 12 doses in: the 1.7 mg step
+      click_button "Edit this pen’s data"
+      click_button "Archive this pen"
+      expect(page).to have_css("#archived-note:not([hidden])", wait: 10)
+
+      select "＋ Add a pen", from: "chip"
+      select WEGOVY, from: "f-product"
+      select "Continue “Novo Nordisk published escalation” from your other pen", from: "f-plan"
+      save_pen(batch: "PENB", expiry: "2028-01")
+
+      # Still 12. The head start belongs to the plan, so it is added once
+      # however many pens carry a copy — added per pen it would read 22 and
+      # jump this person two steps up their ladder.
+      expect(find("#plan-line").text).to eq("Weeks 13–16 · 1.7 mg · 4 more doses at this amount")
+      expect(stored_pen(1)["plan"]["priorDoses"]).to eq(10)
+    end
+
+    it "refuses more doses at an amount than the plan has at it" do
+      select WEGOVY, from: "f-product"
+      select PRESET, from: "f-plan"
+      select "I’m taking 1 mg now", from: "f-plan-progress"
+      fill_in "f-plan-prior", with: 9 # the 1 mg step is four doses long
+      accept_alert(wait: 5) { click_button "Save pen" }
+      expect(page).to have_css("#setup-card:not([hidden])")
+    end
+
+    it "treats a head start past the end of a finite ladder as finished" do
+      save_planned_wegovy
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          const [row] = await window.countaTest.rows();
+          const data = await window.countaTest.decryptRow(row);
+          data.plan = { ...data.plan, priorDoses: 5,
+                        steps: [ { units: 0.25, doses: 1, sourceLabel: null } ] };
+          await window.countaTest.writeRow(row, data);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+      expect(find("#plan-line").text).to eq("Step 1 of 1 · 0.25 mg · every step recorded")
+    end
+
+    it "says back where the answer lands, before it is saved" do
+      # The whole risk in "how many have you had at this amount" is the reader
+      # being a dose out either way. Restating it in the app's own words makes
+      # that visible while it can still be corrected.
+      select WEGOVY, from: "f-product"
+      select PRESET, from: "f-plan"
+      expect(page).to have_css("#plan-position", visible: :hidden)
+
+      select "I’m taking 1 mg now", from: "f-plan-progress"
+      fill_in "f-plan-prior", with: 3
+      expect(find("#plan-position").text)
+        .to eq("counta will start you at 1 mg · 1 more dose at this amount.")
+
+      # The boundary answer converges: someone who has had all four at 1 mg
+      # and someone who says they're now on 1.7 with none taken land in the
+      # same place, so the ±1 reading can't send them a step apart.
+      fill_in "f-plan-prior", with: 4
+      first_reading = find("#plan-position").text
+      select "I’m taking 1.7 mg now", from: "f-plan-progress"
+      fill_in "f-plan-prior", with: 0
+      expect(find("#plan-position").text).to eq(first_reading)
     end
   end
 
@@ -578,6 +733,31 @@ RSpec.describe "Dose plan", type: :system do
 
       log_dose
       expect(find("#plan-line").text).to eq("Step 1 of 1 · 0.25 mg · every step recorded")
+    end
+
+    it "offers no position beyond an open-ended step" do
+      # The shipped ladder's open-ended step is its last, so the filter is a
+      # no-op there and the UI spec above cannot exercise it — a hand-written
+      # ladder (issue #44) can put one in the middle, and nothing after it is
+      # a position anyone can reach.
+      trailing = [ { "units" => 1, "doses" => 2 }, { "units" => 2, "doses" => nil } ]
+      middle = [ { "units" => 1, "doses" => 2 }, { "units" => 2, "doses" => nil },
+                 { "units" => 3, "doses" => 4 } ]
+      expect(js("window.countaTest.planReachableSteps(arguments[0])", trailing)).to eq(2)
+      expect(js("window.countaTest.planReachableSteps(arguments[0])", middle)).to eq(2)
+    end
+
+    it "converges on the same head start from either side of a boundary" do
+      # "I've had all four at 1 mg" and "I'm on 1.7 with none yet" are the same
+      # position stated two ways, and the arithmetic has to agree — otherwise
+      # the ±1 reading of the question lands people a dose apart.
+      steps = [ { "units" => 0.25, "doses" => 4 }, { "units" => 0.5, "doses" => 4 },
+                { "units" => 1, "doses" => 4 }, { "units" => 1.7, "doses" => 4 } ]
+      prior = ->(i, n) { js("window.countaTest.planPriorDosesFor(arguments[0], arguments[1], arguments[2])", steps, i, n) }
+      expect(prior.call(2, 4)).to eq(12)
+      expect(prior.call(3, 0)).to eq(12)
+      expect(prior.call(0, 0)).to eq(0)
+      expect(prior.call(2, 2)).to eq(10)
     end
 
     it "validates a step on amount and on the dial, and on nothing else" do

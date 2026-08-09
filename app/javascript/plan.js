@@ -94,8 +94,21 @@ export function planDoses(plan, pens) {
     .filter(entry => entry.date >= plan.startedOn);
 }
 
+// Doses under this plan, counted from the start of the ladder — not from the
+// day counta got involved.
+//
+// Almost nobody transcribing a published escalation is on week one: they find
+// counta partway up the ramp, and the doses behind them were often taken on a
+// starter pen, or on tablets, or on a pen they never told counta about. Those
+// doses are PLAN history, not pen history, so backdating them into some pen's
+// dose log would be recording events that did not happen to that pen. They
+// live on the plan instead, as a single count the user states once at
+// transcription time.
+//
+// Absent on every blob written before this existed, hence the ?? 0: an old
+// plan is simply one that started at the beginning.
 export function dosesTaken(plan, pens) {
-  return planDoses(plan, pens).length;
+  return (plan?.priorDoses ?? 0) + planDoses(plan, pens).length;
 }
 
 // The most recent dose under this plan, or null when there hasn't been one.
@@ -225,6 +238,33 @@ export function missedDosesSince(lastDoseISO, todayISO, freqDays) {
 
 export function missedDoses(plan, pens, todayISO, freqDays) {
   return missedDosesSince(lastDoseDate(plan, pens), todayISO, freqDays);
+}
+
+// Steps a person can meaningfully say they are "on". An open-ended step never
+// ends, so nothing after one is reachable — offering those would invite a
+// position the ladder can't represent.
+export function reachableSteps(steps) {
+  const out = [];
+  for (const step of steps ?? []) {
+    out.push(step);
+    if (step.doses == null) break;
+  }
+  return out;
+}
+
+// Doses behind someone who says they are on step `index` having already taken
+// `atStep` doses at that amount: every dose of every step before it, plus the
+// ones at this one.
+//
+// Note this is boundary-robust, which is why the UI asks the question this
+// way. Someone who has finished all four doses at 1 mg can answer either
+// "1 mg, 4 taken" or "1.7 mg, 0 taken" and both give 12 — the two natural
+// readings of where they are converge on the same number instead of landing a
+// dose apart.
+export function priorDosesFor(steps, index, atStep) {
+  let before = 0;
+  for (let i = 0; i < index; i++) before += steps[i]?.doses ?? 0;
+  return before + Math.max(0, atStep);
 }
 
 /* ============ validation ============ */

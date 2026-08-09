@@ -12,7 +12,7 @@
 // on unlock, so capturing it once would leave every hook holding null forever.
 import { roundToNearestHalfHour } from "dosing_time";
 import { stepIndexFor, daysBetween, missedDosesSince, planStepError,
-         nextDoseStep, dosesLeftAtStep } from "plan";
+         nextDoseStep, dosesLeftAtStep, reachableSteps, priorDosesFor } from "plan";
 
 export function install(ctx) {
   const { api, encryptPayload, decryptPayload, buildIcsForExport } = ctx;
@@ -137,6 +137,11 @@ export function install(ctx) {
     // arithmetic with no DOM and no I/O, so exercising the edge cases here is
     // both exact and far cheaper than driving each one through the UI.
     planStepIndex: (steps, n) => stepIndexFor({ steps }, n),
+    // Positions a person can claim to be on. The shipped ladder ends
+    // open-ended, so the filter is a no-op there and only a hand-written
+    // ladder with an open-ended step in the MIDDLE exercises it.
+    planReachableSteps: steps => reachableSteps(steps).length,
+    planPriorDosesFor: (steps, index, atStep) => priorDosesFor(steps, index, atStep),
     // All three branches of the step validator, including the null
     // maxDialClicks one (a custom pen's dial limit is unknown, not
     // unlimited), which no listed product can reach through the UI today.

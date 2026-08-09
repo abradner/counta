@@ -54,6 +54,23 @@ stay true even for someone who is weeks behind.
 
 ![Dose plan](screenshots/05b-dose-plan.png)
 
+Hardly anyone transcribing an escalation is on week one — most people find
+counta partway up the ramp. So the card asks where they are, defaulting to
+"just starting" so a genuinely new user answers nothing extra. The question is
+**which amount you're taking now** and **how many you've already had at it**,
+both facts already known; asking what the *next* dose will be would make the
+user work out whether they're due to step up, which is the thing counta is for.
+Answering from either side of a step boundary gives the same result, so the
+off-by-one reading of the question can't land someone a dose out — and the app
+says the answer back before anything is saved.
+
+Those earlier doses often happened on a starter pen, on tablets, or on a pen
+counta never saw, so they're kept with the **plan**, not written into any pen's
+dose log. The start date accordingly means "when counta starts counting", not
+when the journey began.
+
+![Joining a plan partway](screenshots/05c-dose-plan-partway.png)
+
 The page states which jurisdiction the feature follows. That isn't decoration:
 the Australian product information allows five days to catch up a missed dose
 and says re-initiation "should be considered", while the US label says two days
