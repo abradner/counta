@@ -46,16 +46,33 @@ export function planPens(pens, planId) {
   return (pens ?? []).filter(p => p?.data?.plan?.id === planId);
 }
 
+// Units → clicks for a given pen. The one conversion: a plan is denominated
+// in the medicine's units and every consumer needs it in clicks against some
+// specific pen's ratio, which during setup is not the pen on screen.
+export function clicksForPen(units, { capUnits, totalClicks }) {
+  return Math.round(units / (capUnits / totalClicks));
+}
+
+// Is `copy` a newer revision of the same plan than `best`?
+//
+// **Only meaningful within one plan id.** `rev` counts edits to a single plan,
+// so comparing revs across different plans says nothing — a long-running plan
+// on rev 9 is not "newer" than one created yesterday on rev 1. Callers that
+// might hold several plans must group by id first; app.js#donorPlan does.
+export function isNewerRevision(copy, best) {
+  return (copy?.rev ?? 0) > (best?.rev ?? 0);
+}
+
 // Concurrent pens can hold copies of the same plan that were edited on
 // different devices. `rev` is the tiebreak the storage design specified: it is
-// bumped on every edit, so the highest one is the newest. This is also what
-// the 409 conflict handler in app.js uses, deliberately — one rule, one place
-// it can be wrong.
+// bumped on every edit, so the highest one is the newest. The 409 conflict
+// handler in app.js uses the same comparator, deliberately — one rule, one
+// place it can be wrong.
 export function currentPlan(pens, plan) {
   if (!plan?.id) return plan ?? null;
   return planPens(pens, plan.id)
     .map(p => p.data.plan)
-    .reduce((best, copy) => ((copy.rev ?? 0) > (best.rev ?? 0) ? copy : best), plan);
+    .reduce((best, copy) => (isNewerRevision(copy, best) ? copy : best), plan);
 }
 
 /* ============ where the plan has got to ============ */
@@ -133,6 +150,13 @@ export function nextDoseStep(plan, pens) {
     step: steps[index],
     taken,
     dosesLeftAtStep,
+    // Every step has a dose count and they have all been used: the ladder has
+    // nothing further to say. stepIndexFor holds at the last step rather than
+    // running off the end, so this is the only thing that distinguishes
+    // "finished" from "on the final step" — without it the ladder looks
+    // endless. Unreachable with the shipped preset, whose last step is
+    // open-ended, but a hand-written ladder (issue #44) need not be.
+    complete: dosesLeftAtStep === 0 && !steps.some(s => s.doses == null),
     stepsUpNext: nextIndex !== index,
     nextStep: nextIndex === index ? null : steps[nextIndex]
   };
@@ -140,40 +164,31 @@ export function nextDoseStep(plan, pens) {
 
 /* ============ what this pen can still deliver ============ */
 
-// The doses this pen can still deliver **at the current step**, in order.
+// How many more doses the plan has **at the step it is currently on**, limited
+// by what this pen can actually deliver. This is the ONE number that is
+// plan-shaped; everything else about "doses left" is a question about the pen,
+// and app.js keeps those separate — conflating the two is what shipped in the
+// first cut of this branch and quietly truncated the calendar export.
 //
 // It deliberately stops at the step boundary. Walking past it would mean
-// converting the next step's mg through THIS pen's clicks-per-unit ratio, and
-// for anyone following a published escalation the next step is a different pen
-// with a different ratio — so the number would be a confident answer to a
-// question we cannot answer until SKUs are modelled (issue #19). Truncating
-// gives a number that is exactly true for every user instead of approximately
-// true for some: on-label pen-swappers, people dialling a 2.4 mg pen down to a
-// microdose, and people dialling a mid-strength pen down alike.
+// converting the next step's units through THIS pen's clicks-per-unit ratio,
+// and for anyone following a published escalation the next step is a different
+// pen with a different ratio — a confident answer to a question we cannot
+// answer until SKUs are modelled (issue #19). Truncating gives a number that
+// is exactly true for every user instead of approximately true for some.
 //
-// Termination: the clicks budget is the real bound (each dose costs at least
-// one click), the step boundary usually comes first, and `limit` is a runaway
-// guard for a malformed plan — an open-ended step whose units round to zero
-// clicks would otherwise spin. `!(clicks > 0)` also catches NaN.
-export function schedule(plan, pens, { clicksFor, remainingClicks, limit = 2000 }) {
-  const steps = plan?.steps ?? [];
-  if (!steps.length) return [];
+// Closed form rather than a walk: every dose at a step costs the same clicks,
+// so it is a minimum of two counts. `!(clicks >= 1)` also catches NaN and the
+// step whose amount rounds to nothing on this pen.
+export function dosesLeftAtStep(plan, pens, { clicksFor, remainingClicks }) {
+  const step = nextDoseStep(plan, pens);
+  if (!step || step.complete) return 0;
 
-  const taken = dosesTaken(plan, pens);
-  const stepIndex = stepIndexFor(plan, taken);
-  const units = steps[stepIndex].units;
+  const clicks = clicksFor(step.step.units);
+  if (!(clicks >= 1)) return 0;
 
-  const out = [];
-  let left = remainingClicks;
-  for (let n = 0; n < limit; n++) {
-    const ordinal = taken + n;
-    if (stepIndexFor(plan, ordinal) !== stepIndex) break;
-    const clicks = clicksFor(units);
-    if (!(clicks > 0) || clicks > left) break;
-    left -= clicks;
-    out.push({ ordinal, stepIndex, units, clicks });
-  }
-  return out;
+  const fitInPen = Math.floor(remainingClicks / clicks);
+  return step.dosesLeftAtStep == null ? fitInPen : Math.min(step.dosesLeftAtStep, fitInPen);
 }
 
 /* ============ gaps ============ */
@@ -228,6 +243,12 @@ export function missedDoses(plan, pens, todayISO, freqDays) {
 // unlimited), so the dial check only applies when we actually know the limit.
 export function planStepError(step, { clicksFor, maxDialClicks }) {
   if (!(step?.units > 0)) return "units";
+  // The mirror of the dial check below, and just as necessary: an amount that
+  // rounds to less than one click on this pen cannot be dialled at all. A
+  // mistyped capacity gets you here — 0.25 mg on a pen told it holds 300 mg
+  // over 296 clicks rounds to zero — and the result would be a plan step the
+  // pen silently cannot deliver.
+  if (!(clicksFor(step.units) >= 1)) return "tiny";
   if (maxDialClicks != null && clicksFor(step.units) > maxDialClicks) return "dial";
   return null;
 }

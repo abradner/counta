@@ -97,6 +97,29 @@ RSpec.describe "Dose plan", type: :system do
       expect(find("#readout-big")).to have_text("15 clicks")
     end
 
+    it "announces the dose that was recorded, not the one dialled next" do
+      # The re-dial after a dose moves the dial onto the next step's amount.
+      # Reading the shared dial value after that announced the wrong number to
+      # anyone using a screen reader — "Dose recorded: 15 clicks" for an
+      # 8-click dose — and they have no visual readout to contradict it.
+      3.times { log_dose }
+      log_dose # the fourth completes the step, so the dial moves 8 -> 15
+      expect(find("#readout-big")).to have_text("15 clicks")
+      expect(find("#sr-live", visible: :all).text).to start_with("Dose recorded: 8 clicks.")
+    end
+
+    it "schedules everything the pen holds, not just this step" do
+      # The export is a question about the pen, not about the plan: four doses
+      # remain at 0.25 mg on the ladder, but the pen holds 37 of them, and a
+      # calendar truncated to the current step silently drops the rest.
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(ics).to include("COUNT=37")
+      # The refill nudge lands two doses from the pen running out, which is
+      # 35 weeks away — not two doses from the end of the current step.
+      refill = ics[/UID:[^\n]*-refill@counta\.click.*?DTSTART;VALUE=DATE:(\d{8})/m, 1]
+      expect(Date.parse(refill)).to be > browser_today + 200
+    end
+
     it "stores the plan inside the encrypted blob and nothing in plaintext" do
       plan = stored_pen["plan"]
       expect(plan["steps"].length).to eq(5)
@@ -194,6 +217,68 @@ RSpec.describe "Dose plan", type: :system do
     expect(plans.map { |p| p["id"] }.uniq.length).to eq(1)
   end
 
+  # "Something else…" is the absence of a medicine, not a medicine: every
+  # unlisted pen shares the productKey "custom", so donor matching on it would
+  # have offered an unlisted insulin pen the mg ladder from an unlisted GLP-1.
+  it "never offers one unlisted pen's plan to another" do
+    select "Something else…", from: "f-product"
+    fill_in "f-name", with: "Mystery A"
+    use_custom_capacity(10)
+    fill_in "f-clicks", with: "100"
+    save_pen(batch: "CA", expiry: "2027-06")
+
+    # A plan can't be created on an unlisted pen through the UI (no published
+    # schedule to transcribe), so put one there the way another device would.
+    page.evaluate_async_script(<<~JS)
+      (async () => {
+        const [row] = await window.countaTest.rows();
+        const data = await window.countaTest.decryptRow(row);
+        data.plan = { id: "custom-plan", rev: 1, label: "Hand-written ladder",
+                      startedOn: "2026-01-01", source: null,
+                      steps: [ { units: 1, doses: 4, sourceLabel: null } ] };
+        await window.countaTest.writeRow(row, data);
+      })().then(arguments[0])
+    JS
+    visit "/"
+    click_button "Unlock with passkey"
+    expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+    select "＋ Add a pen", from: "chip"
+    select "Something else…", from: "f-product"
+    # No published schedule, no plan of its own, and nothing it may inherit —
+    # so the plan section isn't offered at all.
+    expect(page).to have_css("#plan-wrap", visible: :hidden)
+  end
+
+  it "offers the plan the person is actually on, not the highest revision" do
+    # `rev` counts edits within one plan, so it says nothing across plans. A
+    # plain max-rev donor would hand a new pen a long-abandoned ladder that had
+    # simply been edited more often than the current one.
+    save_planned_wegovy(batch: "OLD", started: browser_today - 300)
+    select "＋ Add a pen", from: "chip"
+    save_planned_wegovy(batch: "NEW", started: browser_today - 10)
+
+    page.evaluate_async_script(<<~JS, (browser_today - 3).iso8601)
+      (async () => {
+        const stale = await window.countaTest.decryptRowAt(0);
+        stale.plan = { ...stale.plan, rev: 99, label: "Abandoned ladder" };
+        await window.countaTest.writeRowAt(0, stale);
+        await window.countaTest.appendDoseTo(1, arguments[0], 8);
+      })().then(arguments[1])
+    JS
+    visit "/"
+    click_button "Unlock with passkey"
+    expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+    select "＋ Add a pen", from: "chip"
+    select WEGOVY, from: "f-product"
+    # The pen with a recent dose wins, though its plan is on rev 1 and the
+    # abandoned one is on rev 99.
+    expect(page).to have_select("f-plan", with_options:
+      [ "Continue “Novo Nordisk published escalation” from your other pen" ])
+    expect(page).not_to have_select("f-plan", with_options: [ "Continue “Abandoned ladder” from your other pen" ])
+  end
+
   it "does not let another medicine's doses advance the ladder" do
     save_planned_wegovy(batch: "WGV")
     select "＋ Add a pen", from: "chip"
@@ -249,15 +334,27 @@ RSpec.describe "Dose plan", type: :system do
       expect(page).to have_css("#setup-card:not([hidden])")
     end
 
-    it "reports an undeliverable step rather than quietly shrinking it" do
-      # Reached by drift rather than at save: the plan is fine on this pen
-      # today and the ladder later asks for more than the dial allows.
+    it "refuses a step that rounds to less than one click on this pen" do
+      select WEGOVY, from: "f-product"
+      # A mistyped capacity — 300 mg where the pen holds 9.6 — makes one click
+      # worth about a milligram, so the ladder's 0.25 mg first step rounds to
+      # nothing. The mirror of the too-big check, and just as undialable.
+      use_custom_capacity(300)
+      select PRESET, from: "f-plan"
+      accept_alert(wait: 5) { click_button "Save pen" }
+      expect(page).to have_css("#setup-card:not([hidden])")
+    end
+
+    # One fixture, three defects. A plan asking for far more than this pen can
+    # dial used to make the pen's own numbers lie: the running-low warning
+    # fired on a brand-new pen, and the calendar export refused outright.
+    it "reports the undeliverable step without misreporting the pen" do
       save_planned_wegovy
       page.evaluate_async_script(<<~JS)
         (async () => {
           const [row] = await window.countaTest.rows();
           const data = await window.countaTest.decryptRow(row);
-          data.plan.steps = [ { units: 9, doses: null, sourceLabel: null } ];
+          data.plan.steps = [ { units: 20, doses: null, sourceLabel: null } ];
           await window.countaTest.writeRow(row, data);
         })().then(arguments[0])
       JS
@@ -265,9 +362,79 @@ RSpec.describe "Dose plan", type: :system do
       click_button "Unlock with passkey"
       expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
 
+      # Said plainly, and the plan is left exactly as the user wrote it.
       expect(find("#plan-dial-warn-text").text)
-        .to eq("Your plan’s next dose is 9 mg. This pen’s dial reaches 2.4 mg.")
+        .to eq("Your plan’s next dose is 20 mg. This pen’s dial reaches 2.4 mg.")
+      # The plan has nothing this pen can deliver at this step...
+      expect(find("#stats .stat:nth-child(2) .v").text).to eq("0")
+      # ...but the PEN is full, and its own warnings must say so. Deriving
+      # them from the plan's fictional step size reported "not enough left in
+      # this pen for a full dose" on 296 untouched clicks.
+      expect(find("#stats .stat:nth-child(3) .v").text).to eq("296")
+      expect(page).to have_css("#warnings")
+      expect(find("#warnings").text).to be_empty
+
+      # Positive control for that absence: the warning is not simply broken —
+      # it appears the moment the pen really is down to its last dialled dose.
+      # (74 clicks is the dial max, so three of them leave exactly one.)
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          for (let i = 0; i < 3; i++) await window.countaTest.appendDoseTo(0, "2020-01-01", 74);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+      expect(find("#warnings").text).to include("last full dose")
     end
+
+    it "still exports a calendar for a pen the plan has outgrown" do
+      save_planned_wegovy
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          const [row] = await window.countaTest.rows();
+          const data = await window.countaTest.decryptRow(row);
+          data.plan.steps = [ { units: 20, doses: null, sourceLabel: null } ];
+          await window.countaTest.writeRow(row, data);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      # The export counts what the pen holds at the size actually dialled — it
+      # used to read the plan's at-this-step number and conclude a full pen had
+      # nothing left to schedule, which was simply untrue.
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(ics).to include("COUNT=4")
+    end
+  end
+
+  # A plan with no steps is not "no plan": it can never say what the next dose
+  # is. Unreachable from this client's own form, but a 409 merge adopts
+  # whatever another device stored, so the dose screen has to survive it.
+  it "survives a plan with no steps in it" do
+    save_planned_wegovy
+    page.evaluate_async_script(<<~JS)
+      (async () => {
+        const [row] = await window.countaTest.rows();
+        const data = await window.countaTest.decryptRow(row);
+        data.plan = { ...data.plan, steps: [] };
+        await window.countaTest.writeRow(row, data);
+      })().then(arguments[0])
+    JS
+    visit "/"
+    click_button "Unlock with passkey"
+
+    # The pen opens, rather than the whole screen throwing on a missing step.
+    expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+    expect(find("#readout-big")).to have_text("8 clicks")
+    expect(page).to have_css("#plan-block", visible: :hidden)
+
+    # And re-saving refuses it rather than writing it back as if it were fine.
+    click_button "Edit this pen’s data"
+    accept_alert(wait: 5) { click_button "Save pen" }
+    expect(page).to have_css("#setup-card:not([hidden])")
   end
 
   describe "a gap in dosing" do
@@ -369,6 +536,50 @@ RSpec.describe "Dose plan", type: :system do
       expect(probe.call("2026-10-01", "2026-10-08", 7)).to eq(0)
     end
 
+    it "stops counting once a finite ladder has been fully dosed" do
+      # stepIndexFor deliberately holds at the last step rather than running
+      # off the end, so nothing about the step index says "finished". Without
+      # the completion flag the count kept going until the pen emptied, and
+      # the tile contradicted the plan line. The shipped preset ends
+      # open-ended, so this only bites a hand-written ladder (issue #44).
+      finite = [ { "units" => 1, "doses" => 2 }, { "units" => 2, "doses" => 2 } ]
+      probe = ->(taken) do
+        js("window.countaTest.planDosesLeftAt(arguments[0], arguments[1], 500, 1)", finite, taken)
+      end
+      expect(probe.call(0)).to eq("left" => 2, "complete" => false)
+      expect(probe.call(3)).to eq("left" => 1, "complete" => false)
+      expect(probe.call(4)).to eq("left" => 0, "complete" => true)
+      expect(probe.call(9)).to eq("left" => 0, "complete" => true)
+
+      # An open-ended tail is never "complete", and is bounded by the pen.
+      open_ended = [ { "units" => 1, "doses" => 2 }, { "units" => 2, "doses" => nil } ]
+      expect(js("window.countaTest.planDosesLeftAt(arguments[0], 5, 9, 1)", open_ended))
+        .to eq("left" => 4, "complete" => false) # 9 clicks / 2 per dose
+    end
+
+    it "says a finished ladder is finished rather than counting zero of it" do
+      # The count above is held to zero by the step's own remaining-doses
+      # figure, so the completion flag is not what produces it — this is the
+      # assertion that makes the flag load-bearing, and the copy is the reason
+      # it exists: "0 more doses at this amount" reads like a defect.
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          const [row] = await window.countaTest.rows();
+          const data = await window.countaTest.decryptRow(row);
+          data.plan = { ...data.plan,
+            steps: [ { units: 0.25, doses: 1, sourceLabel: null } ] };
+          await window.countaTest.writeRow(row, data);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+      expect(find("#plan-line").text).to eq("Step 1 of 1 · 0.25 mg · 1 more dose at this amount")
+
+      log_dose
+      expect(find("#plan-line").text).to eq("Step 1 of 1 · 0.25 mg · every step recorded")
+    end
+
     it "validates a step on amount and on the dial, and on nothing else" do
       err = ->(units, max, per) do
         js("window.countaTest.planStepError(arguments[0], arguments[1], arguments[2])", units, max, per)
@@ -378,9 +589,14 @@ RSpec.describe "Dose plan", type: :system do
       expect(err.call(-1, 74, per_click)).to eq("units")
       expect(err.call(2.4, 74, per_click)).to be_nil
       expect(err.call(4.8, 74, per_click)).to eq("dial")
+      # Below one click is as undialable as above the dial's limit, and it is
+      # what a mistyped capacity produces.
+      expect(err.call(0.25, 74, 1.0)).to eq("tiny")
       # A custom pen's dial limit is unknown, not unlimited: with nothing to
-      # compare against, the dial check cannot fire.
+      # compare against, the dial check cannot fire — but the tiny check,
+      # which needs no limit, still does.
       expect(err.call(4.8, nil, per_click)).to be_nil
+      expect(err.call(0.25, nil, 1.0)).to eq("tiny")
     end
   end
 

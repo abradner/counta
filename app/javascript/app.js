@@ -10,8 +10,8 @@ import { encryptPayload, decryptPayload } from "crypto";
 import { PrfUnsupportedError } from "passkeys";
 import { buildIcs } from "ics";
 import {
-  currentPlan, nextDoseStep, schedule, missedDoses, lastDoseDate, daysBetween,
-  stepUndeliverable, planStepError
+  currentPlan, nextDoseStep, dosesLeftAtStep, missedDoses, lastDoseDate,
+  daysBetween, stepUndeliverable, planStepError, clicksForPen, isNewerRevision
 } from "plan";
 import { t, clicks, tNodes } from "i18n";
 
@@ -50,16 +50,28 @@ const remainingClicks = () => remainingClicksOf(pen());
 const activePlan = () => (pen()?.plan ? currentPlan(pens, pen().plan) : null);
 // What the next dose will be, per the plan — null when the pen has no plan.
 const planStep = () => nextDoseStep(activePlan(), pens);
-// Doses this pen can still deliver.
+
+// TWO different questions, and they must not share a function. The first cut
+// of the dose plan collapsed them, which quietly truncated the calendar export
+// to the current step and made a full pen refuse to export at all.
 //
-// With a plan this is "doses left AT THE CURRENT STEP" (plan.js explains why
-// it stops there rather than walking the whole ladder). Without one it keeps
-// the old meaning — remaining clicks divided by whatever is dialled — which
-// has its own defect, tracked separately, and is deliberately untouched here.
-const remainingDoses = () => {
+//   remainingDoses()  — "how many doses of the size currently dialled does
+//                        this pen physically hold". Pen capacity. What the
+//                        calendar export, the expiry warning and the
+//                        running-low warnings have always meant, plan or no
+//                        plan. Unchanged from before plans existed.
+//
+//   planDosesLeft()   — "how many doses the plan has left at this step, on
+//                        this pen". Plan shaped, stops at the step boundary,
+//                        and feeds exactly one thing: the doses tile.
+//
+// doseClicks is already clamped to the dial and to what's left (clampDose), so
+// it is by construction a size this pen can deliver — which is what makes
+// remainingDoses honest even when the plan asks for something it can't.
+const remainingDoses = () => (doseClicks > 0 ? Math.floor(remainingClicks() / doseClicks) : 0);
+const planDosesLeft = () => {
   const p = activePlan();
-  if (p) return schedule(p, pens, { clicksFor, remainingClicks: remainingClicks() }).length;
-  return doseClicks > 0 ? Math.floor(remainingClicks() / doseClicks) : 0;
+  return p ? dosesLeftAtStep(p, pens, { clicksFor, remainingClicks: remainingClicks() }) : null;
 };
 const unitsPerClick = () => pen().capUnits / pen().totalClicks;
 // Trim trailing zeros, but only after the decimal point: "10.00" -> "10",
@@ -69,7 +81,7 @@ const fmtUnits = (v, decimals) => decimals
   ? (Math.round(v * 100) / 100).toFixed(2).replace(/\.?0+$/, "")
   : Math.round(v).toString();
 const fmtU = v => fmtUnits(v, pen().decimals);
-const clicksFor = u => Math.round(u / unitsPerClick());
+const clicksFor = u => clicksForPen(u, pen());
 const unitsForClicks = c => c * unitsPerClick();
 // Local-calendar date. Never toISOString() — that converts to UTC and lands a
 // day early/late for anyone not on UTC (AGENTS.md §9.6).
@@ -222,8 +234,12 @@ async function persistPen(p, opts = {}) {
       // device edits it lets the edit win, because a removal has no rev to
       // compare. That errs toward keeping data the user typed, and removing
       // again works — the opposite default would silently discard their edit.
+      // Same comparator plan.js uses everywhere else, so "which copy is newer"
+      // has one definition. Note the asymmetry it introduces here and why it
+      // is wanted: a local plan of null scores 0, so a concurrent edit wins
+      // over a removal, per the note above.
       if (opts.planIntent) {
-        if ((theirs.plan?.rev ?? -1) > (p.data.plan?.rev ?? -1)) p.data.plan = theirs.plan;
+        if (isNewerRevision(theirs.plan, p.data.plan)) p.data.plan = theirs.plan;
       } else {
         p.data.plan = theirs.plan ?? null;
       }
@@ -319,11 +335,36 @@ const planPresetsFor = key => productByKey(key)?.plan_presets ?? [];
 // different SKUs of one product (Wegovy ships a separate pen per strength)
 // needs SKUs modelled first (issue #19).
 function donorPlan(productKey) {
+  // "Something else…" is not a medicine, it is the absence of one: every
+  // unlisted pen shares the productKey "custom", so matching on it would offer
+  // a custom insulin pen the mg ladder from a custom Wegovy pen. There is no
+  // field that says two unlisted pens hold the same drug, so counta doesn't
+  // guess — an unlisted pen's plan is transcribed again by hand.
+  if (!productKey || productKey === "custom") return null;
+
   const plans = pens
-    .filter(p => p !== editingPen && p.data?.plan && p.data.productKey === productKey)
+    .filter(p => p !== editingPen && p.data?.plan?.id && p.data.productKey === productKey)
     .map(p => p.data.plan);
   if (!plans.length) return null;
-  return plans.reduce((best, copy) => ((copy.rev ?? 0) > (best.rev ?? 0) ? copy : best));
+
+  // `rev` counts edits WITHIN one plan, so a plain max-rev across candidates
+  // would prefer a long-running plan on rev 9 over the one started yesterday
+  // that replaced it. Group by id first: pick the plan the person is actually
+  // on — most recent dose, then most recent start — and only then use rev to
+  // choose between concurrent copies of that same plan.
+  const byId = new Map();
+  for (const plan of plans) {
+    const best = byId.get(plan.id);
+    if (!best || isNewerRevision(plan, best)) byId.set(plan.id, plan);
+  }
+  // Compared field by field, NOT as one joined string: a plan with no doses
+  // yet contributes an empty first field, and any separator character that
+  // sorts above a digit would then rank it above a plan dosed yesterday.
+  const key = plan => [ lastDoseDate(plan, pens) ?? "", plan.startedOn ?? "" ];
+  return [ ...byId.values() ].reduce((best, plan) => {
+    const a = key(plan), b = key(best);
+    return (a[0] === b[0] ? a[1] > b[1] : a[0] > b[0]) ? plan : best;
+  });
 }
 
 // Default start date for a newly transcribed plan: the pen's earliest recorded
@@ -454,28 +495,38 @@ function syncPlanUi() {
 // plan.js#planStepError for why an "ascending steps" check must never join
 // them. Conversion uses the ratio of the pen being SAVED, not the pen
 // currently on screen — during setup those can be different pens.
-function planFormError(plan, { capUnits, totalClicks, maxDialClicks, unit, decimals }) {
-  if (!plan?.steps?.length) return null;
+function planFormError(plan, penShape) {
+  if (!plan) return null;
+  const { capUnits, totalClicks, maxDialClicks, unit, decimals } = penShape;
+  // A plan with no steps is not "no plan" — it is a plan that can never say
+  // what the next dose is, and the dose screen has nothing to render for it.
+  // Refusing it here is the only place the state is stoppable from the UI;
+  // renderPlan also guards, because a plan adopted from another device in a
+  // 409 merge never passes through this function.
+  if (!plan.steps?.length) return t("errors.plan_empty");
+
+  const clicksForForm = u => clicksForPen(u, { capUnits, totalClicks });
   const perClick = capUnits / totalClicks;
-  const clicksForForm = u => Math.round(u / perClick);
 
   // A non-positive amount is malformed whatever pen it lands on.
-  if (plan.steps.some(step => planStepError(step, { clicksFor: clicksForForm, maxDialClicks: null }))) {
-    return t("errors.plan_units");
-  }
+  if (plan.steps.some(step => !(step?.units > 0))) return t("errors.plan_units");
 
-  // The dial check applies to the step THIS pen is about to deliver, and only
+  // The dial checks apply to the step THIS pen is about to deliver, and only
   // that one. A later step legitimately belongs to a different pen — a
   // published escalation ships a separate pen per strength — so checking the
   // whole ladder against this pen's dial would refuse the most ordinary real
   // plan there is. Drift into an undeliverable step later is reported on the
   // dose screen instead (renderPlan), never silently corrected.
   const step = nextDoseStep(plan, pens)?.step;
-  if (step && planStepError(step, { clicksFor: clicksForForm, maxDialClicks }) === "dial") {
+  const error = step && planStepError(step, { clicksFor: clicksForForm, maxDialClicks });
+  if (error === "dial") {
     return t("errors.plan_dial", {
       units: fmtUnits(step.units, decimals), unit,
       max: fmtUnits(maxDialClicks * perClick, decimals)
     });
+  }
+  if (error === "tiny") {
+    return t("errors.plan_tiny", { units: fmtUnits(step.units, decimals), unit });
   }
   return null;
 }
@@ -519,7 +570,23 @@ async function savePenForm() {
     alert(planError);
     return;
   }
+  // Spread the existing blob first, then override only what this form owns.
+  //
+  // This function rebuilds the entire blob on every save, including a save
+  // that only fixes a typo'd batch number — so under the old shape any field
+  // the literal forgot to name was silently deleted by an unrelated edit. That
+  // class has now been patched three times (the capacity reset in #1,
+  // calendarUid/calendarSequence in #14, plan here). Spreading makes survival
+  // the default rather than something each new field has to remember, so the
+  // next field added to the blob is safe by construction.
+  //
+  // The defaults below still matter: a NEW pen has nothing to spread from, and
+  // they are what a first save writes.
   const data = {
+    history: [], registrationIds: [], calendarUid: null, calendarSequence: 0,
+    ...(editingPen?.data ?? {}),
+
+    // Everything from here down is owned by this form and always overwritten.
     v: 1,
     productKey: key,
     name: key === "custom" ? ($("f-name").value || "My pen") : p.name,
@@ -537,16 +604,10 @@ async function savePenForm() {
     // dose to 1 click. null means "no dial limit known" — see clampDose.
     maxDialClicks: p.max_dial_clicks ?? null,
     common: p.common_doses, theme: p.theme,
-    history: editingPen ? editingPen.data.history : [],
-    registrationIds: editingPen ? editingPen.data.registrationIds : [],
-    // Carried over like history/registrationIds: savePenForm rebuilds the
-    // whole blob on every save (including a plain settings edit), and
-    // calendarUid/calendarSequence (#14) have to survive that or every edit
-    // would silently reset the calendar's supersede tracking.
-    calendarUid: editingPen ? editingPen.data.calendarUid : null,
-    calendarSequence: editingPen ? (editingPen.data.calendarSequence || 0) : 0,
-    // Same carry-forward hazard again (#21) — planFromSetupForm's "keep"
-    // branch is what makes an unrelated edit preserve the ladder.
+    // The plan IS form-owned — the select decides it, and its "keep" branch is
+    // what makes an unrelated edit preserve the ladder rather than the spread
+    // above (which would also preserve it, but silently, and would keep a plan
+    // the user had just chosen to remove).
     plan
   };
 
@@ -813,8 +874,12 @@ function renderDose() {
   // A finished or expired pen suggests archiving rather than trashing —
   // archiving keeps its history and batch number.
   $("archive-pen").hidden = !(empty || isExpired(d));
-  renderPlan();
-  renderStatsWarnings();
+  // Derived once and passed down: this is the dial's hot path (every +/- tap
+  // repaints), and activePlan/planStep each walk every pen's history.
+  const plan = activePlan();
+  const step = nextDoseStep(plan, pens);
+  renderPlan(plan, step);
+  renderStatsWarnings(step);
   paintPen();
 }
 
@@ -824,22 +889,26 @@ function renderDose() {
 // nor what anyone should take: the AU and US product information give
 // different missed-dose windows and different wording for several missed
 // doses, so any paraphrase would be wrong in one of them. Facts, and a link.
-function renderPlan() {
-  const plan = activePlan();
-  $("plan-block").hidden = !plan;
-  if (!plan) return;
+function renderPlan(plan, step) {
+  // `step` is null for a plan with no steps at all — not reachable from this
+  // client's own setup form (planFormError refuses it), but reachable by
+  // adopting another device's plan in a 409 merge, or from a malformed preset
+  // row. Without this guard the dose screen throws and the pen won't open.
+  $("plan-block").hidden = !plan || !step;
+  if (!plan || !step) return;
 
   const d = pen();
-  const step = planStep();
 
   // Week wording comes from the source document when there is any; otherwise
   // the step's position in the ladder. Never a week computed from the
   // calendar, which would disagree with the dose position after a gap.
   const stepLabel = step.step.sourceLabel
     || t("plan.step_number", { number: step.index + 1, total: step.total });
-  const remaining = step.dosesLeftAtStep == null
-    ? t("plan.ongoing")
-    : t("plan.doses_left_at_step", { count: step.dosesLeftAtStep });
+  const remaining = step.complete
+    ? t("plan.complete")
+    : step.dosesLeftAtStep == null
+      ? t("plan.ongoing")
+      : t("plan.doses_left_at_step", { count: step.dosesLeftAtStep });
   let line = t("plan.step_line", {
     label: stepLabel, units: fmtU(step.step.units), unit: d.unit, remaining
   });
@@ -886,6 +955,11 @@ function dateEl(isoDay) {
 
 function renderPlanGap(plan, d) {
   const missed = missedDoses(plan, pens, todayISO(), d.freqDays);
+  // Two, not one, and not off by one: both labels reserve their re-initiation
+  // wording for two or more consecutive missed doses, and the decision record
+  // on issue #21 fixes the threshold there. A single late dose is ordinary and
+  // counta says nothing about it. (Flagged in review once; leaving the reason
+  // here so it isn't re-flagged.)
   $("plan-gap").hidden = missed < 2;
   if (missed < 2) return;
 
@@ -893,7 +967,10 @@ function renderPlanGap(plan, d) {
   $("plan-gap-text").replaceChildren(...tNodes(
     "plan.gap",
     { date: dateEl(last) },
-    { days: daysBetween(last, todayISO()), frequency: t("frequency.days", { count: d.freqDays }) }
+    {
+      ago: t("plan.days_ago", { count: daysBetween(last, todayISO()) }),
+      frequency: t("frequency.days", { count: d.freqDays })
+    }
   ));
 
   const href = safeHref(plan.source?.url);
@@ -904,21 +981,20 @@ function renderPlanGap(plan, d) {
   }
 }
 
-function renderStatsWarnings() {
+function renderStatsWarnings(step) {
   const d = pen();
   const rc = remainingClicks(), ru = unitsForClicks(rc);
-  const step = planStep();
-  // Two different questions, and conflating them is how a number stops being
-  // true. `rd` answers "how many doses does the plan have left AT THIS STEP"
-  // — that's the headline tile, and it stops at the step boundary because
-  // costing the next step against this pen's ratio would assume a pen we know
-  // nothing about (plan.js#schedule). `dp` answers "how many more doses of
-  // this size does the pen physically hold", which is what the expiry and
-  // running-low warnings below have always meant.
-  const rd = remainingDoses();
-  const dp = step
-    ? (clicksFor(step.step.units) > 0 ? Math.floor(rc / clicksFor(step.step.units)) : 0)
-    : rd;
+  // `dp` is pen capacity at the size actually dialled, and drives everything
+  // below — the expiry projection and the running-low warnings, whose wording
+  // has always been about the pen. Deriving it from the PLAN's step size
+  // instead was wrong twice over: an undeliverable step (more clicks than the
+  // dial or the pen has left) made a brand-new pen report "this is the last
+  // full dose", and a step rounding to zero clicks made it report "not enough
+  // left for a full dose". doseClicks is clamped to something this pen can
+  // deliver, so it never lies that way.
+  const dp = remainingDoses();
+  // `rd` is the plan's own number and reaches exactly one place: the tile.
+  const rd = step ? planDosesLeft() : dp;
   const ml = d.capMl ? ` · ${(d.capMl * rc / d.totalClicks).toFixed(2)} mL` : "";
   $("stats").innerHTML =
     `<div class="stat"><div class="v">${esc(fmtU(ru))}</div><div class="k">${esc(unitsLeftLabel(d, rc))}</div></div>` +
@@ -1301,12 +1377,17 @@ function wire() {
       return;
     }
     renderHistory();
+    // Captured BEFORE the re-dial below, which moves doseClicks on to the next
+    // step's amount: reading the global afterwards announced the dose you are
+    // about to take, not the one just recorded — "Dose recorded: 15 clicks"
+    // for an 8-click dose. Screen-reader users get no visual to correct it.
+    const recordedClicks = entry.clicks;
     // The dose just recorded may have completed a step, so re-dial before
     // rendering — see syncDialToPlan.
     syncDialToPlan();
     renderDose();
     buildSwitcher(); // % remaining in the switcher label stays live
-    announce(t("status.dose_recorded", { count: doseClicks, remaining: remainingClicks() }));
+    announce(t("status.dose_recorded", { count: recordedClicks, remaining: remainingClicks() }));
   });
   $("confirm-no").addEventListener("click", () => $("confirm-dlg").close());
   $("info-btn").addEventListener("click", () => $("info-dlg").showModal());

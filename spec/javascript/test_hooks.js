@@ -11,7 +11,8 @@
 // Note the context is GETTERS, not values: `dek` is null at boot and only set
 // on unlock, so capturing it once would leave every hook holding null forever.
 import { roundToNearestHalfHour } from "dosing_time";
-import { stepIndexFor, daysBetween, missedDosesSince, planStepError } from "plan";
+import { stepIndexFor, daysBetween, missedDosesSince, planStepError,
+         nextDoseStep, dosesLeftAtStep } from "plan";
 
 export function install(ctx) {
   const { api, encryptPayload, decryptPayload, buildIcsForExport } = ctx;
@@ -75,6 +76,17 @@ export function install(ctx) {
       return writeAsOtherDevice(await currentRow(), data);
     },
 
+    // writeRow always targets the first row; specs with several pens need to
+    // say which one.
+    async writeRowAt(index, data) {
+      const rows = await api("/api/pens");
+      return writeAsOtherDevice(rows[index], data);
+    },
+    async decryptRowAt(index) {
+      const rows = await api("/api/pens");
+      return decryptPayload(dek(), rows[index].blob);
+    },
+
     // Another device archives the pen; this tab's cached state stays stale.
     async archiveElsewhere() {
       const row = await currentRow();
@@ -130,6 +142,20 @@ export function install(ctx) {
     // unlimited), which no listed product can reach through the UI today.
     planStepError: (units, maxDialClicks, unitsPerClick) =>
       planStepError({ units }, { clicksFor: u => Math.round(u / unitsPerClick), maxDialClicks }),
+    // A completed finite ladder has nothing further to offer: stepIndexFor
+    // holds at the last step, so without the `complete` flag the boundary
+    // check can never fire and the count runs on until the pen empties.
+    planDosesLeftAt: (steps, taken, remainingClicks, unitsPerClick) => {
+      const plan = { id: "probe", startedOn: "2000-01-01", steps };
+      const pens = [ { data: { plan, history: Array.from({ length: taken },
+        (_, i) => ({ id: String(i), date: "2020-01-01", clicks: 1 })) } } ];
+      return {
+        left: dosesLeftAtStep(plan, pens, {
+          clicksFor: u => Math.round(u / unitsPerClick), remainingClicks
+        }),
+        complete: nextDoseStep(plan, pens)?.complete ?? null
+      };
+    },
     planDaysBetween: (fromISO, toISO) => daysBetween(fromISO, toISO),
     planMissedDoses: (lastISO, todayISO, freqDays) =>
       missedDosesSince(lastISO, todayISO, freqDays),

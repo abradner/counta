@@ -296,9 +296,18 @@ en:
         one: 1 dose
         other: "%{count} doses"
       ongoing: ongoing, no end date
+      complete: every step recorded
       doses_left_at_step:
         one: 1 more dose at this amount
         other: "%{count} more doses at this amount"
+      # A bare "%{days} days ago" is the untranslatable shape this file's
+      # header warns about — it reads "1 days ago" in English and has no room
+      # for languages with more than two plural forms. Interpolated as a
+      # pluralised phrase instead, which is also why the i18n guard forbids a
+      # raw %{days} anywhere in this subtree.
+      days_ago:
+        one: 1 day ago
+        other: "%{count} days ago"
       step_line: "%{label} · %{units} %{unit} · %{remaining}"
       moves_next: After that your plan moves to %{units} %{unit}.
       undeliverable: >-
@@ -306,8 +315,8 @@ en:
         %{max} %{unit}.
       source_line: Plan steps transcribed from %{source}.
       gap: >-
-        Your last recorded dose was %{date} — %{days} days ago. Your plan
-        expects one every %{frequency}.
+        Your last recorded dose was %{date} — %{ago}. Your plan expects one
+        every %{frequency}.
       gap_read_source: "Read %{source}"
 
     stats:
@@ -384,6 +393,10 @@ en:
         counta needs both to convert between them.
       nothing_to_schedule: There are no doses left in this pen to schedule.
       plan_units: Every plan step needs an amount greater than zero.
+      plan_empty: That plan has no steps in it, so counta can’t tell what your next dose would be.
+      plan_tiny: >-
+        This plan has a %{units} %{unit} step, which is less than one click on
+        this pen — check the pen’s capacity and total clicks above.
       plan_dial: >-
         This plan has a %{units} %{unit} step, but this pen’s dial only reaches
         %{max} %{unit}. Pick a plan this pen can dial, or set the pen up with

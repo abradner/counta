@@ -129,6 +129,52 @@ RSpec.describe "Copy and localisation" do
       "Dose-plan copy must describe, never recommend:\n#{offenders.join("\n")}"
   end
 
+  # The plural-by-concatenation guard below catches `n + (n === 1 ? "" : "s")`
+  # in JS. This catches the same class one layer up, in the copy itself: a
+  # string that interpolates a bare number next to a unit noun ("%{days} days
+  # ago") reads "1 days ago" in English and cannot be translated into a
+  # language with more than two plural forms. The count has to come from a
+  # pluralised subtree, so those placeholders must not appear as raw text.
+  # The shape is specifically a placeholder immediately followed by the unit
+  # noun it counts. A placeholder that merely NAMES a unit is fine when what
+  # gets substituted is already a pluralised phrase ("%{units} %{unit} ·
+  # %{doses}"), and leaves inside a one/other subtree are the correct home for
+  # a raw count and are exempt below.
+  # Two precise shapes rather than one loose one, because a loose "placeholder
+  # followed by a unit noun" also matches innocent copy like "%{unit} step" and
+  # the tuning that follows is how a guard gets quietly disarmed (§9.10):
+  #   - an explicit count placeholder followed by a unit noun, and
+  #   - any placeholder followed by the very noun it is named after.
+  # Kept as two patterns rather than one Regexp.union: union renumbers capture
+  # groups, which silently repoints the \1 backreference below at the other
+  # branch's group and makes the whole check stop matching.
+  BARE_COUNT_UNIT = /%\{(?:count|number|n|total)\}\s+(?:days?|weeks?|months?|doses?|clicks?|steps?)\b/i
+  PLACEHOLDER_THEN_OWN_NOUN = /%\{(\w+?)s?\}\s+\1s?\b/i
+  PLURAL_LEAF = /\.(one|other|zero|two|few|many)\z/
+
+  def counted_bare?(text)
+    text.match?(BARE_COUNT_UNIT) || text.match?(PLACEHOLDER_THEN_OWN_NOUN)
+  end
+
+  it "never interpolates a bare count next to a unit in dose-plan copy" do
+    # Controls in the same example (§9.10). The first pair is the defect this
+    # exists for; the second pair is what the pattern was narrowed to allow, so
+    # the narrowing itself is pinned and can't quietly widen into "matches
+    # nothing".
+    expect(counted_bare?("Your last dose was %{days} days ago.")).to be true
+    expect(counted_bare?("%{doses} doses left at this amount")).to be true
+    expect(counted_bare?("%{count} weeks at this amount")).to be true
+    expect(counted_bare?("Your last recorded dose was %{date} — %{ago}.")).to be false
+    expect(counted_bare?("%{units} %{unit} · %{doses}")).to be false
+    expect(counted_bare?("This plan has a %{units} %{unit} step")).to be false
+
+    offenders = plan_copy
+      .reject { |key, _| key.match?(PLURAL_LEAF) }
+      .filter_map { |key, text| "#{key}: #{text}" if counted_bare?(text) }
+    expect(offenders).to be_empty,
+      "Counted quantities belong in a one/other subtree, not interpolated raw:\n#{offenders.join("\n")}"
+  end
+
   it "builds plurals with count, never by concatenating an s" do
     # The single most common localisation blocker in the original copy: many
     # languages need more than two forms, so `n + (n === 1 ? "" : "s")` is
