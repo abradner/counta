@@ -3,7 +3,7 @@
 // server. Deterministic UIDs per pen so a re-export replaces cleanly.
 
 import { t, clicks } from "i18n";
-import { roundToNearestHalfHour } from "dosing_time";
+import { dosingTime } from "dosing_time";
 
 function pad(n) { return String(n).padStart(2, "0"); }
 
@@ -28,7 +28,8 @@ function escapeText(s) {
 // pressed — a parameter rather than an inline `new Date()` so callers (and
 // tests) can pin it; defaults to "actually now" for real exports.
 // Returns null if there is nothing left to schedule.
-export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel, now = new Date()) {
+export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel, now = new Date(),
+                         entriesForTime = null) {
   if (remainingDoses < 1) return null;
 
   // Doses can be backdated, so the last ENTERED dose isn't the latest one.
@@ -39,14 +40,17 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel,
   const start = last ? new Date(last + "T00:00") : new Date();
   if (last) start.setDate(start.getDate() + Math.round(pen.freqDays));
 
-  // The dosing-time proxy (#14): no "what time do you dose?" question (that
-  // would cost a screen — AGENTS.md §2's "trivially easy" rule), so the
-  // moment of export stands in, rounded to the nearest half hour. Only the
-  // hour/minute come from the rounded instant — its own calendar date is
-  // irrelevant, since the reminder's date already comes from the dose
-  // schedule above, not from "now".
-  const proxyTime = roundToNearestHalfHour(now);
-  start.setHours(proxyTime.getHours(), proxyTime.getMinutes(), 0, 0);
+  // The dosing time (#14, unified with the on-screen forecast in #37): still
+  // no "what time do you dose?" question — that would cost a screen (AGENTS.md
+  // §2's "trivially easy" rule) — but the guess is now informed. dosingTime
+  // prefers the time a dose was actually recorded at and falls back to the
+  // moment of export, rounded, exactly as before. The screen calls the same
+  // function, so the calendar and the forecast cannot name different times.
+  //
+  // Only the hour and minute are taken from it: the reminder's DATE comes from
+  // the dose schedule above, never from "now".
+  const [ hour, minute ] = dosingTime(entriesForTime ?? pen.history, now).split(":").map(Number);
+  start.setHours(hour, minute, 0, 0);
   const end = new Date(start.getTime() + 5 * 60 * 1000);
 
   const wholeDays = Number.isInteger(pen.freqDays);

@@ -219,6 +219,29 @@ export function daysBetween(isoFrom, isoTo) {
   return Math.round((at(isoTo) - at(isoFrom)) / 864e5);
 }
 
+// A local calendar date `days` after another one, as a `YYYY-MM-DD` string.
+//
+// Two defences, and they cover for each other — worth naming, because a
+// reader removing either alone will find the tests still pass. setDate does
+// calendar-day arithmetic, so it survives a day that is 23 or 25 hours long;
+// local noon keeps the whole interval a half-day away from midnight, so even
+// millisecond arithmetic would round to the right day. Drop BOTH — midnight
+// plus 7×24h — and a spring-forward week lands on the 7th, not the 8th.
+//
+// Note this function never touches an instant: a calendar date string in, a
+// calendar date string out, local getters throughout. That is what keeps the
+// forecast clear of the §9.6 hazard entirely rather than defending against it.
+//
+// Fractional cadences round, matching what the calendar export already does
+// with the same figure — a twice-weekly pen forecasts and exports the same
+// day, rather than the two surfaces disagreeing by twelve hours.
+export function addDays(isoDay, days) {
+  const d = new Date(+isoDay.slice(0, 4), +isoDay.slice(5, 7) - 1, +isoDay.slice(8, 10), 12);
+  d.setDate(d.getDate() + Math.round(days));
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Scheduled doses skipped between the last recorded dose and today.
 //
 // freqDays 7: a gap of 7 is due-today (0 missed), 8 is a day late (0), 14 is
