@@ -12,7 +12,8 @@
 // on unlock, so capturing it once would leave every hook holding null forever.
 import { roundToNearestHalfHour } from "dosing_time";
 import { stepIndexFor, daysBetween, missedDosesSince, planStepError,
-         nextDoseStep, dosesLeftAtStep, reachableSteps, priorDosesFor } from "plan";
+         nextDoseStep, dosesLeftAtStep, reachableSteps, priorDosesFor,
+         addDays } from "plan";
 
 export function install(ctx) {
   const { api, encryptPayload, decryptPayload, buildIcsForExport } = ctx;
@@ -162,6 +163,7 @@ export function install(ctx) {
       };
     },
     planDaysBetween: (fromISO, toISO) => daysBetween(fromISO, toISO),
+    planAddDays: (isoDay, days) => addDays(isoDay, days),
     planMissedDoses: (lastISO, todayISO, freqDays) =>
       missedDosesSince(lastISO, todayISO, freqDays),
 

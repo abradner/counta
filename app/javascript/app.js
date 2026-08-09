@@ -9,10 +9,11 @@ import { signup, signIn, addPasskey, recoverWithKit, signOut, deleteAccount } fr
 import { encryptPayload, decryptPayload } from "crypto";
 import { PrfUnsupportedError } from "passkeys";
 import { buildIcs } from "ics";
+import { captureDosingTime, lastDoseTime, dosingTime } from "dosing_time";
 import {
   currentPlan, nextDoseStep, dosesLeftAtStep, missedDoses, lastDoseDate,
   daysBetween, stepUndeliverable, planStepError, clicksForPen, isNewerRevision,
-  reachableSteps, priorDosesFor
+  reachableSteps, priorDosesFor, addDays, planDoses
 } from "plan";
 import { t, clicks, tNodes } from "i18n";
 
@@ -1003,6 +1004,7 @@ function renderDose() {
   const plan = activePlan();
   const step = nextDoseStep(plan, pens);
   renderPlan(plan, step);
+  renderForecast(plan, step);
   renderStatsWarnings(step);
   paintPen();
 }
@@ -1064,6 +1066,119 @@ function renderPlan(plan, step) {
     $("plan-source").replaceChildren(
       ...tNodes("plan.source_line", { source: planSourceLink(plan.source) }));
   }
+}
+
+/* ============ next-dose forecast (issue #37) ============ */
+// Two facts about the user's own schedule, in calendar language: when the next
+// dose falls due, and what it will be. A display surface over derivations that
+// already exist — the plan's next step (#21) and the pen's dose history — with
+// no arithmetic of its own beyond one call to plan.js#addDays.
+//
+// DAY ONLY, no time of day, and that is a decision rather than an omission.
+// Issue #37 asks to reuse #14's dosing-time proxy, but the proxy rounds a
+// TIMESTAMP and nothing here has one: dose entries store a calendar date and
+// no clock time, and the calendar fields in the blob hold a UID and a
+// sequence number, not the rounded time an export used. Feeding the proxy the
+// moment the page happened to load would put a confident "due at 2:15 pm" on
+// screen built from when someone opened the app. #37's other requirement —
+// that the calendar and this surface never disagree about dosing time — is
+// then met by construction, because this surface makes no claim about it.
+//
+// `lastDose` is scoped to the PLAN when there is one, so it still reads right
+// the day after a pen swap, when the last dose sits on the archived pen.
+// The dose the forecast counts forward from. Plan-scoped when there is a plan,
+// so it still reads right the day after a pen swap, when the last dose sits on
+// the pen that was just archived.
+function forecastAnchorDate(plan) {
+  if (plan) return lastDoseDate(plan, pens);
+  return byDate(pen().history ?? []).at(-1)?.date ?? null;
+}
+
+// The doses a dosing time may be read from. Plan-scoped when there is a plan,
+// matching the date anchor above: a routine outlives the pen it was observed
+// on, so the day after a pen swap the habit is still known.
+function timeSourceEntries() {
+  const plan = activePlan();
+  return plan ? planDoses(plan, pens) : (pen().history ?? []);
+}
+
+function renderForecast(plan, step) {
+  const d = pen();
+  const anchor = forecastAnchorDate(plan);
+
+  // Nothing to forecast from, and nothing to say about that: the history list
+  // immediately below already reads "No doses yet", so a second empty state
+  // here would be noise rather than help.
+  $("forecast").hidden = !anchor;
+  if (!anchor) return;
+
+  // Two sources for the time, and the copy says which one it is. An observed
+  // time is a fact about this person; the fall-back is a guess from the clock
+  // right now, and reads as one.
+  const entries = timeSourceEntries();
+  const observed = lastDoseTime(entries);
+  $("forecast-due").replaceChildren(...tNodes(
+    observed ? "forecast.due_at" : "forecast.due_at_guess",
+    { date: weekdayEl(addDays(anchor, d.freqDays)), time: timeEl24(dosingTime(entries, new Date())) }
+  ));
+
+  // The plan owns "how much" while it has something left to say. A finished
+  // ladder doesn't, so it falls through to the same answer as an unplanned
+  // pen — reusing the states #21 already built rather than inventing a third.
+  if (step && !step.complete) {
+    // Units derived from the CLICKS, not printed straight from the plan.
+    // Clicks are canonical (docs/architecture.md decision 3), and 0.25 mg on
+    // this pen is 8 clicks which is really 0.26 mg — printing the plan's
+    // figure would contradict the readout the moment they dial it.
+    const planClicks = clicksFor(step.step.units);
+    $("forecast-amount").hidden = false;
+    $("forecast-amount").textContent = t("forecast.amount_plan", {
+      clicks: clicks(planClicks),
+      units: fmtU(unitsForClicks(planClicks)), unit: d.unit
+    });
+    return;
+  }
+  // No plan: say plainly that this is a repeat of last time, rather than
+  // wording it so it reads as a schedule the user never set up (#37). Taken
+  // from THIS pen's history — a dose on a pen that has since been archived
+  // says nothing about what this one is dialled to deliver.
+  const previous = byDate(pen().history ?? []).at(-1);
+  $("forecast-amount").hidden = !previous;
+  if (!previous) return;
+  $("forecast-amount").textContent = t("forecast.amount_last", {
+    clicks: clicks(previous.clicks), units: fmtU(unitsForClicks(previous.clicks)), unit: d.unit
+  });
+}
+
+// A wall-clock "HH:MM" rendered in the viewer's own clock convention, with the
+// stored 24-hour value in datetime — so a spec asserts "18:00" whatever the
+// locale renders (§9.9), and assistive tech gets the machine-readable form.
+function timeEl24(hhmm) {
+  const el = document.createElement("time");
+  el.className = "forecast-time";
+  el.dateTime = hhmm;
+  const [ hour, minute ] = hhmm.split(":").map(Number);
+  // Any date will do — only the clock fields are formatted.
+  const shown = new Date(2000, 0, 1, hour, minute);
+  // timeStyle, not hour/minute parts: on a 24-hour locale the parts form
+  // renders 01:00 as a bare "1:00", which sits inconsistently next to "13:00"
+  // and reads as ambiguous; timeStyle gives the locale's own short format,
+  // zero-padded on 24-hour locales and carrying am/pm on 12-hour ones. A time
+  // about medication should not need working out.
+  el.textContent = shown.toLocaleTimeString(undefined, { timeStyle: "short" });
+  return el;
+}
+
+// Like dateEl, but naming the weekday — "due Tuesday" is how people hold a
+// weekly schedule. datetime still carries the plain calendar date, so specs
+// assert something that doesn't move with the viewer's locale (§9.9).
+function weekdayEl(isoDay) {
+  const el = document.createElement("time");
+  el.className = "forecast-date";
+  el.dateTime = isoDay;
+  el.textContent = localMidnight(isoDay)
+    .toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+  return el;
 }
 
 // A dose date is a LOCAL calendar date string in the blob, not an instant:
@@ -1326,8 +1441,11 @@ async function buildIcsForExport(now = new Date()) {
     d.calendarSequence = snapshotSequence;
     throw e;
   }
+  // The same entries the on-screen forecast reads its time from, so the two
+  // surfaces cannot name different times (#37's one-proxy rule). Plan-scoped
+  // when there is a plan, because a habit outlives the pen it was observed on.
   return buildIcs(d, activePen.id, remainingDoses(), doseClicks,
-    `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`, now);
+    `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`, now, timeSourceEntries());
 }
 
 async function downloadIcs() {
@@ -1494,8 +1612,20 @@ function wire() {
     // Stable id per dose so a merge can tell "the same dose, seen twice"
     // from "two identical doses on the same day", which are indistinguishable
     // by their contents alone.
-    const entry = { id: crypto.randomUUID(), date: $("f-date").value || todayISO(),
-                    clicks: doseClicks, units: unitsForClicks(doseClicks) };
+    // Pressing "Dose now" is a better observation of when someone doses than
+    // anything counta could ask for — they are doing it as they press it — so
+    // the moment is captured, rounded to the half hour, and kept with the
+    // dose. Stored as a wall-clock "HH:MM", not an instant, so 18:00 stays
+    // 18:00 across a daylight-saving change (AGENTS.md §9.6).
+    //
+    // Only for a dose entered as TODAY. A backdated dose happened at some
+    // other time entirely, and stamping the present moment on it would invent
+    // an observation — the one thing this field must not do, since the
+    // calendar export sets real reminders from it.
+    const enteredDate = $("f-date").value || todayISO();
+    const entry = { id: crypto.randomUUID(), date: enteredDate,
+                    clicks: doseClicks, units: unitsForClicks(doseClicks),
+                    ...(enteredDate === todayISO() ? { time: captureDosingTime(new Date()) } : {}) };
     pen().history.push(entry);
     try {
       await persistPen(activePen);
@@ -1518,7 +1648,18 @@ function wire() {
     syncDialToPlan();
     renderDose();
     buildSwitcher(); // % remaining in the switcher label stays live
-    announce(t("status.dose_recorded", { count: recordedClicks, remaining: remainingClicks() }));
+    // The forecast changes at exactly this moment, and it is deliberately not
+    // its own live region — two regions speaking at once is how one of them
+    // gets dropped. Folded into the one announcement instead, so a screen
+    // reader user hears the new due day without having to go looking for it.
+    // querySelector, not $: $ is getElementById and cannot take a descendant.
+    const due = $("forecast").hidden
+      ? null
+      : document.querySelector("#forecast-due .forecast-date")?.textContent;
+    announce(due
+      ? t("status.dose_recorded_next", {
+          count: recordedClicks, remaining: remainingClicks(), date: due })
+      : t("status.dose_recorded", { count: recordedClicks, remaining: remainingClicks() }));
   });
   $("confirm-no").addEventListener("click", () => $("confirm-dlg").close());
   $("info-btn").addEventListener("click", () => $("info-dlg").showModal());
