@@ -1,4 +1,5 @@
 require "active_support/core_ext/integer/time"
+require_relative "../../lib/webauthn_env_config"
 
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
@@ -68,7 +69,10 @@ Rails.application.configure do
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 
-  config.hosts = [ "counta.click" ]
-  config.x.webauthn_origin = "https://counta.click"
-  config.x.webauthn_rp_id = "counta.click"
+  # ENV-overridable with the canonical production values as defaults — see
+  # WebauthnEnvConfig (lib/webauthn_env_config.rb) for why this is a safe
+  # optional knob rather than a fail-fast-required one.
+  config.hosts = WebauthnEnvConfig.hosts
+  config.x.webauthn_origin = WebauthnEnvConfig.origin
+  config.x.webauthn_rp_id = WebauthnEnvConfig.rp_id
 end
