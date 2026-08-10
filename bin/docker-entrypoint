@@ -1,0 +1,11 @@
+#!/bin/bash -e
+
+# Migrations apply on rollout rather than as a separate release step — the
+# established pattern on the Athena cluster (AGENTS.md §7). db:prepare
+# creates the database if it doesn't exist and is a no-op once the schema is
+# current, so running it unconditionally on every container start is safe —
+# including when a CronJob overrides CMD to run `rake pens:purge` instead of
+# the server.
+./bin/rails db:prepare
+
+exec "${@}"
