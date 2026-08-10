@@ -332,9 +332,9 @@ en:
 
     # Next-dose forecast (#37). Calendar language about the user's OWN
     # schedule — "due" describes when the next one falls, and never tells
-    # anyone to take it. Day only: nothing stored carries a time of day, and
-    # inventing one from when the app was opened would be a confident number
-    # about medication built from nothing.
+    # anyone to take it. The time is the dosing-time proxy (a stored dose
+    # time when one exists, else the current half hour) and due_at_guess is
+    # the copy that owns saying so when it's the guess.
     forecast:
       due_at: Your next dose is due %{date}, around %{time}.
       due_at_guess: >-

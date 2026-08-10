@@ -1074,15 +1074,12 @@ function renderPlan(plan, step) {
 // already exist — the plan's next step (#21) and the pen's dose history — with
 // no arithmetic of its own beyond one call to plan.js#addDays.
 //
-// DAY ONLY, no time of day, and that is a decision rather than an omission.
-// Issue #37 asks to reuse #14's dosing-time proxy, but the proxy rounds a
-// TIMESTAMP and nothing here has one: dose entries store a calendar date and
-// no clock time, and the calendar fields in the blob hold a UID and a
-// sequence number, not the rounded time an export used. Feeding the proxy the
-// moment the page happened to load would put a confident "due at 2:15 pm" on
-// screen built from when someone opened the app. #37's other requirement —
-// that the calendar and this surface never disagree about dosing time — is
-// then met by construction, because this surface makes no claim about it.
+// The time of day comes from the dosing-time proxy (dosing_time.js#dosingTime):
+// the stored half-hour of the last dose that carries one (history[].time,
+// captured at the "Dose now" press), else the current time rounded — and the
+// copy says plainly when it's the guess. The ICS export calls the same
+// function, so #37's requirement that the calendar and this surface never
+// disagree about dosing time holds because there is one derivation, not two.
 //
 // `lastDose` is scoped to the PLAN when there is one, so it still reads right
 // the day after a pen swap, when the last dose sits on the archived pen.
