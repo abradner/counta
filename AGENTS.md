@@ -78,7 +78,7 @@ A conflict with a principle is a stop-and-check, never something to quietly work
 | Framework | Rails | |
 | Database | PostgreSQL | |
 | Testing | RSpec | |
-| Deployment | undecided | don't build for it until asked — see §7 |
+| Deployment | Athena (Talos k8s, Argo CD gitops) | image from GHCR, built by `.github/workflows/docker.yml` — see §7 |
 
 ## 4. Critical Architectural Rules
 
@@ -185,14 +185,34 @@ every PR and push to main, with the mise-pinned Ruby and a Postgres 18 service o
 as local dev. A separate `lint` job runs Rubocop (`.rubocop.yml`), Brakeman, and bundler-audit —
 run `mise exec -- bundle exec rubocop` locally before pushing. (This sentence used to say "no
 linter is adopted yet"; that was stale from before #1 landed the lint job — corrected 2026-08-09
-per §10 meta-rule 1.) Deployment is undecided — don't build for it until asked.
+per §10 meta-rule 1.)
+
+**Deployment target is decided** (this sentence used to say "undecided — don't build for it until
+asked"; that changed with issues #6/#10 and the PR that added this paragraph — corrected in place
+per §10 meta-rule 1): the **Athena** cluster — Talos Kubernetes, Argo CD gitops. The gitops
+manifests (Deployment, Service, Ingress, the retention-sweep CronJob for `rake pens:purge`,
+External Secrets pulling `DATABASE_URL`/`RAILS_MASTER_KEY` from 1Password) live in the separate
+`athena-gitops` repo, not here — this repo's responsibility ends at publishing a runnable image.
+`.github/workflows/docker.yml` builds the production `Dockerfile` (multi-arch: linux/amd64 and
+linux/arm64, since the cluster's workers are Raspberry Pi arm64) and pushes to
+`ghcr.io/abradner/counta` — `latest` on `main`, `sha-<commit>` always, `v*` on version tags. A
+merge to `athena-gitops` main is what actually deploys; a counta merge only publishes an image.
+Cutover (DNS/HAProxy pointing `counta.click` at the cluster instead of the dev host) is a separate,
+tracked step — see `docs/repo-map.md` R-005 and issue #10; don't treat "the image builds" as
+"cutover happened."
 
 Two universal cautions, whatever the pipeline:
 
 - **A skipped job is not a passing job.** A green run where path filtering skipped half the suite
   means that half never saw the commit. Check what actually ran before trusting the check.
 - **A merge is not a release** — if images/artifacts build from tags only, merged work has no
-  deployable artifact until a tag exists. Not yet applicable — no release/artifact flow exists.
+  deployable artifact until a tag exists. **Currently false in one direction, and that's a known
+  gap, not a claim this repo is making**: the gitops manifests track image tag `:latest` with
+  `imagePullPolicy: Always` (a documented upstream TODO in `athena-gitops` is to pin to `sha-`
+  tags instead), so a `counta` merge to `main` *does* publish `:latest`, and the next pod restart
+  on the cluster picks it up with no separate release step. Say this plainly rather than leaving
+  the old caution standing unqualified (§10 meta-rule 1) — a merge to `main` here is closer to a
+  release than the general rule above implies, until `athena-gitops` moves off `:latest`.
 
 ## 8. Working Rules
 
