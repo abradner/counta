@@ -194,6 +194,17 @@
             <p class="hint" id="plan-source" hidden></p>
           </div>
 
+          <%# Next-dose forecast (#37). Two facts about the user's own
+              schedule, in calendar language — when the next dose falls due,
+              and what it will be. Deliberately NOT an aria-live region: it
+              changes at the same moment the dose-recorded announcement fires,
+              and two regions speaking at once is how one of them gets
+              dropped. The day is folded into that announcement instead. %>
+          <div id="forecast" hidden>
+            <p class="forecast-line" id="forecast-due"></p>
+            <p class="forecast-line" id="forecast-amount"></p>
+          </div>
+
           <label for="f-date"><%= t('ui.dose.date') %></label>
           <input type="date" id="f-date">
           <div style="margin-top:14px">

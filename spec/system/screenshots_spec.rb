@@ -60,6 +60,9 @@ RSpec.describe "Screenshots", type: :system, if: ENV["SCREENSHOTS"] == "1" do
     shot("07-confirm-dose")
     within("#confirm-dlg") { click_button "Yes, I dosed" }
     expect(page).to have_css("#history li strong", wait: 10)
+    # The forecast only exists once there's a dose to count forward from, so
+    # the tour's shot of it has to come after one (#37).
+    shot("06b-next-dose-forecast", height: 1060)
 
     click_button "Add dose reminders to calendar"
     expect(page).to have_css("#ics-dlg[open]")

@@ -24,6 +24,17 @@ RSpec.describe "ICS export and account panel", type: :system do
   # immune to host/Ruby timezone differences (same reasoning as "today" in
   # the anchoring spec below). :14 rounds cleanly down to :00 — see
   # spec/system/dosing_time_spec.rb for the proxy's boundary behaviour.
+  # The "HH:MM" stored against the pen's first dose, or nil for entries that
+  # predate the field / were backdated.
+  def stored_dose_time
+    page.evaluate_async_script(<<~JS)
+      window.countaTest.rows()
+        .then(rows => window.countaTest.decryptRow(rows[0]))
+        .then(data => data.history.map(h => h.time).filter(Boolean)[0])
+        .then(arguments[0]);
+    JS
+  end
+
   def local_time_ms(hour, minute)
     page.evaluate_script("(() => { const d = new Date(); d.setHours(#{hour}, #{minute}, 0, 0); return d.getTime(); })()")
   end
@@ -36,8 +47,13 @@ RSpec.describe "ICS export and account panel", type: :system do
     expect(ics).to include("BEGIN:VCALENDAR")
     # Timed 5-minute dose event with an immediate alarm (#14), not all-day —
     # an all-day event can't carry a time and most clients never alert on it.
-    expect(ics).to match(/DTSTART:\d{8}T090000\r\n/)
-    expect(ics).to match(/DTEND:\d{8}T090500\r\n/)
+    # The reminder fires at the time the dose was actually RECORDED, not at
+    # whatever moment the export button happened to be pressed (#37 unified
+    # the two onto one function). Read back from the blob rather than
+    # hardcoded, since the capture is the real clock rounded.
+    recorded = stored_dose_time
+    expect(ics).to match(/DTSTART:\d{8}T#{recorded.delete(":")}00\r\n/)
+    expect(ics).not_to include("T091400") # never the raw press moment
     expect(ics).to include("BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:PT0M", "END:VALARM")
     # 288 clicks left at 8 clicks/dose = 36 doses, weekly.
     expect(ics).to include("RRULE:FREQ=DAILY;INTERVAL=7;COUNT=36")
@@ -83,6 +99,19 @@ RSpec.describe "ICS export and account panel", type: :system do
     expect(ics).to include("DESCRIPTION:Dose day — Tresiba: dial 5 clicks — the counter will show 10 U")
   end
 
+  # The other half of the unified proxy: with no dose carrying a time — every
+  # entry predating the field, or every one backdated — the export falls back
+  # to the moment it was pressed, which is exactly #14's original behaviour.
+  it "falls back to the export moment when no dose carries a time" do
+    page.evaluate_async_script(<<~JS, (Date.current - 3).iso8601)
+      window.countaTest.appendDose(arguments[0]).then(arguments[1]);
+    JS
+    ics = ics_preview(local_time_ms(9, 14)) # rounds to 09:00
+
+    expect(stored_dose_time).to be_nil
+    expect(ics).to match(/DTSTART:\d{8}T090000\r\n/)
+  end
+
   # Regression: the export anchored on the last-ENTERED dose, so logging a
   # backdated dose after a recent one started the whole reminder series (and
   # the refill event) a cycle early.
@@ -108,8 +137,10 @@ RSpec.describe "ICS export and account panel", type: :system do
     ics = ics_preview(local_time_ms(9, 0))
     # Weekly pen dosed today: the series starts a week from TODAY, not a week
     # after the backdated entry (which is already in the past).
-    expect(ics).to include("DTSTART:#{(today + 7).strftime("%Y%m%d")}T090000")
-    expect(ics).not_to include("DTSTART:#{(today - 14).strftime("%Y%m%d")}T090000")
+    # Only the DATE is the point here; the time comes from the recorded dose
+    # (#37) and is asserted in the export spec above.
+    expect(ics).to match(/DTSTART:#{(today + 7).strftime("%Y%m%d")}T\d{6}\r\n/)
+    expect(ics).not_to match(/DTSTART:#{(today - 14).strftime("%Y%m%d")}T/)
   end
 
   # Re-export shouldn't duplicate, gap 1 (#14): without a growing SEQUENCE, a

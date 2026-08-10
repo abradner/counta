@@ -127,6 +127,9 @@ button{font:inherit;cursor:pointer}
 /* Dose-plan step line (#21): sits under the readout, reads as a caption to it
    rather than as another warning. */
 .plan-line{margin:8px 0 0;font-size:13px;font-weight:600;color:var(--brand);text-align:center}
+/* Next-dose forecast (#37): reads as a caption under the readout, like the
+   plan line, but softer — it is information, not the thing being done now. */
+.forecast-line{margin:6px 0 0;font-size:13px;color:var(--ink-soft);text-align:center}
 .plan-line:empty{display:none}
 .warn{border-radius:10px;padding:10px 12px;margin-top:10px;font-size:14px;font-weight:600;
       display:flex;gap:8px;align-items:flex-start}

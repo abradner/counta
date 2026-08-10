@@ -98,10 +98,14 @@ RSpec.describe "Copy and localisation" do
       else flat[path.join(".")] = node.to_s
       end
     end
-    %w[ui.setup ui.dose client.plan client.errors client.stats].each do |root|
+    %w[ui.setup ui.dose client.plan client.forecast client.errors client.stats].each do |root|
       walk.call(I18n.t(root), [ root ])
     end
-    flat.select { |key, _| key.include?("plan") || key.include?("doses_left_at_step") }
+    # The forecast (#37) renders alongside the plan and is subject to the same
+    # rule, so it is scanned whole rather than by keyword.
+    flat.select do |key, _|
+      key.include?("plan") || key.include?("doses_left_at_step") || key.start_with?("client.forecast")
+    end
   end
 
   it "keeps dose-plan copy free of anything that reads as a recommendation" do
