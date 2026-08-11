@@ -149,10 +149,12 @@ RSpec.describe "Dose plan", type: :system do
       expect(starts.map { |_, d| Date.parse(d) })
         .to eq([ 0, 28, 56, 84 ].map { |n| browser_today + n })
 
-      # The ladder never reaches 2.4 mg on this pen, and the pre-ladder single
-      # event is superseded — both cancelled, so neither can go on firing.
-      expect(ics).to match(/UID:[^\n]*-dose-s4@counta\.click.*?STATUS:CANCELLED/m)
-      expect(ics).to match(/UID:[^\n]*-dose@counta\.click.*?STATUS:CANCELLED/m)
+      # Nothing is cancelled, because this pen has never exported: there is no
+      # event in anyone's calendar to retire. An earlier cut sent a tombstone
+      # for every step the plan could name — including 2.4 mg, which this pen
+      # never reaches — and clients materialise a placeholder for a UID they
+      # have never seen, so three junk events landed on today's date.
+      expect(ics).not_to include("STATUS:CANCELLED")
 
       # Two doses before the ladder stalls — 13 doses funded, so ordinal 11,
       # which is 77 days out. Asserted exactly: a `>` comparison here passed
@@ -165,9 +167,11 @@ RSpec.describe "Dose plan", type: :system do
       # The first export writes the step series, and records how many step slots
       # this pen has ever used.
       page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
-      expect(stored_pen["calendarSteps"]).to eq(5)
+      # Only the four steps this pen can fund — not the fifth, which the ladder
+      # never reaches and so was never written to a calendar.
+      expect(stored_pen["calendarSlots"]).to eq(%w[dose-s0 dose-s1 dose-s2 dose-s3])
 
-      # That count is the whole reason the field exists. Once the plan is gone
+      # That record is the whole reason the field exists. Once the plan is gone
       # there is no ladder left to enumerate, so a stateless export could not
       # name the events it wrote last time — and the old series would go on
       # firing beside the new one: two live sets of dose reminders, at
@@ -189,12 +193,21 @@ RSpec.describe "Dose plan", type: :system do
       expect(ics).to match(
         /UID:[^\n]*-dose@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:[^\r]+\r\nDTEND:/
       )
-      # ...and every step slot the pen ever wrote is retired, not just the ones
-      # some current plan happens to still name.
+      # ...and every step slot the last export left live is retired, not just
+      # the ones some current plan happens to still name.
       step_events = ics.scan(/UID:[^\n]*-dose-s(\d)@counta\.click.*?END:VEVENT/m)
-      expect(step_events.map(&:first)).to eq(%w[0 1 2 3 4])
+      expect(step_events.map(&:first)).to eq(%w[0 1 2 3])
       ics.scan(/UID:[^\n]*-dose-s\d+@counta\.click.*?END:VEVENT/m)
         .each { |vevent| expect(vevent).to include("STATUS:CANCELLED") }
+
+      # Cancelled once, and then never again: the slots dropped out of
+      # calendarSlots when they stopped being live, so a re-export has nothing
+      # left to retire. Re-sending a cancellation for a UID the calendar has
+      # already dropped is what makes clients re-create the placeholder, so
+      # "stops" is the property that matters here, not just "happens".
+      again = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(again).not_to include("STATUS:CANCELLED")
+      expect(again).not_to match(/-dose-s\d+@counta\.click/)
     end
 
     it "stores the plan inside the encrypted blob and nothing in plaintext" do
@@ -645,12 +658,10 @@ RSpec.describe "Dose plan", type: :system do
       expect(ics).to match(
         /UID:[^\n]*-dose@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:[^\r]+\r\nDTEND:/
       )
-      # Positive control for that absence: step UIDs DO appear here (the plan
-      # has a step, so its slot has been written and must be retired) — every
-      # one of them cancelled, none of them live.
-      step_events = ics.scan(/UID:[^\n]*-dose-s\d+@counta\.click.*?END:VEVENT/m)
-      expect(step_events).not_to be_empty
-      step_events.each { |vevent| expect(vevent).to include("STATUS:CANCELLED") }
+      # No step event at all, live or cancelled: the ladder never laid one out
+      # on this pen, so there is nothing in a calendar to retire.
+      expect(ics).not_to match(/-dose-s\d+@counta\.click/)
+      expect(ics).not_to include("STATUS:CANCELLED")
     end
   end
 
