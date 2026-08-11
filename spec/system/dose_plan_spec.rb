@@ -132,10 +132,13 @@ RSpec.describe "Dose plan", type: :system do
       expect(ics).to include("dial 8 clicks (≈ 0.26 mg)", "RRULE:FREQ=DAILY;INTERVAL=7;COUNT=4")
       expect(ics).to include("dial 15 clicks (≈ 0.49 mg)")
       expect(ics).to include("dial 31 clicks (≈ 1.01 mg)")
-      # The final step is a single dose, so it carries no RRULE at all — a
-      # COUNT=1 series draws as a recurrence in some clients.
+      # The final step is a single dose, and still carries its own COUNT=1 rule:
+      # an earlier cut omitted the RRULE for one-dose events, which made the
+      # unplanned path stop matching what it emitted before this change for a
+      # pen down to its last dose.
       expect(ics).to include("dial 52 clicks (≈ 1.69 mg)")
-      expect(ics.scan(/RRULE/).length).to eq(3)
+      expect(ics).to include("RRULE:FREQ=DAILY;INTERVAL=7;COUNT=1")
+      expect(ics.scan(/RRULE/).length).to eq(4)
 
       # One live event per funded step, in order, a fortnight-free chain of
       # four-dose blocks: today, +28d, +56d, +84d.
@@ -187,6 +190,72 @@ RSpec.describe "Dose plan", type: :system do
       starts = ics.scan(/-dose-s\d@counta\.click.*?DTSTART:(\d{8})T\d{6}\r\nDTEND:/m).flatten
       expect(starts.length).to be > 1
       expect(Date.parse(starts[1]) - Date.parse(starts[0])).to eq(14)
+    end
+
+    it "publishes the merged plan, not the ladder this tab had cached" do
+      # This tab exports the transcribed ladder, so its first step is live.
+      first = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(first).to include("dial 8 clicks (≈ 0.26 mg)")
+
+      # Another device then replaces the plan with a single maintenance step.
+      # This tab's cached updated_at is now stale, so its next export MUST take
+      # persistPen's 409 path — asserted below on the amounts themselves, not
+      # on "no error", so a merge that never ran shows up as the wrong dose
+      # rather than a silently passing test (AGENTS.md §9.8).
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          const [row] = await window.countaTest.rows();
+          const data = await window.countaTest.decryptRow(row);
+          data.plan.steps = [ { units: 2.4, doses: null, sourceLabel: null } ];
+          await window.countaTest.writeRow(row, data);
+        })().then(arguments[0])
+      JS
+
+      # The series has to be rebuilt from what the merge adopted. Publishing the
+      # cached ladder under a HIGHER sequence would overwrite the other device's
+      # correct schedule with amounts this user is no longer on — the calendar
+      # would win, and it would be wrong.
+      second = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(second).to include("dial 74 clicks (≈ 2.4 mg)")
+      expect(second).not_to include("dial 8 clicks")
+
+      # And only the one step the merged plan actually has is live.
+      live = second.scan(
+        /-dose-s(\d)@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:\d{8}T\d{6}\r\nDTEND:/
+      )
+      expect(live.map(&:first)).to eq(%w[0])
+    end
+
+    it "withdraws the schedule when the pen runs out" do
+      # The pen has published a ladder...
+      first = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(first).to include("RRULE")
+      expect(first).to include("Buy more Wegovy")
+
+      # ...and is then emptied. Before, the export refused outright ("nothing to
+      # schedule") and every reminder it had already published stayed live —
+      # telling someone to keep injecting out of a pen with nothing in it. An
+      # empty pen has nothing to schedule but everything to withdraw.
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          for (let i = 0; i < 4; i++) await window.countaTest.appendDoseTo(0, "2020-01-01", 74);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(ics).not_to be_nil
+      # Every event in the file is a tombstone: no recurrence, and no dose left
+      # to name. The refill nudge goes with them — "buy more" is a statement
+      # about a schedule, and this file is withdrawing one.
+      expect(ics).not_to include("RRULE")
+      expect(ics).not_to include("Buy more Wegovy")
+      expect(ics).to match(/UID:[^\n]*-refill@counta\.click.*?STATUS:CANCELLED/m)
+      vevents = ics.scan(/BEGIN:VEVENT.*?END:VEVENT/m)
+      expect(vevents).not_to be_empty
+      vevents.each { |vevent| expect(vevent).to include("STATUS:CANCELLED") }
     end
 
     it "cancels the ladder's events when the plan is removed" do

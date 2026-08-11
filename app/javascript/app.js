@@ -1449,11 +1449,18 @@ function icsSeries(d, segments, previousSlots) {
   // this pen cannot dial — falls back to the flat count at the size on the dial,
   // which clampDose guarantees the pen can deliver. A full pen must never export
   // an empty calendar just because the plan asked for something impossible (#45).
+  // A pen with nothing left schedules nothing — but it still has to be able to
+  // WITHDRAW what it scheduled before, or the last export's reminders go on
+  // telling someone to inject out of an empty pen. That is the one case where
+  // an export is all tombstones and no doses.
+  const flat = remainingDoses() > 0
+    ? [ { slot: "dose", doses: remainingDoses(), summary: summaryFor(doseClicks) } ]
+    : [];
   const events = segments.length
     ? segments.map(s => ({
       slot: `dose-s${s.stepIndex}`, doses: s.doses, summary: summaryFor(s.clicks)
     }))
-    : [ { slot: "dose", doses: remainingDoses(), summary: summaryFor(doseClicks) } ];
+    : flat;
 
   // Cancel exactly what the LAST export left live and this one doesn't — never
   // every slot the plan could name. Cancelling a UID the calendar has never
@@ -1470,40 +1477,60 @@ function icsSeries(d, segments, previousSlots) {
   return { events, cancelled: previousSlots.filter(slot => !live.has(slot)) };
 }
 
-async function buildIcsForExport(now = new Date()) {
-  if (remainingDoses() < 1) return null;
-  const d = pen();
-  const plan = activePlan();
-  const segments = plan
-    ? penDoseSegments(plan, pens, {
-      clicksFor, remainingClicks: remainingClicks(), maxDialClicks: d.maxDialClicks
-    })
-    : [];
+// Everything the series is derived from, as a comparable value. Used only to
+// notice that a 409 merge moved the ground under a series already computed —
+// see the loop below.
+const seriesInputs = d => JSON.stringify([ d.plan, d.history, d.totalClicks ]);
 
-  const snapshotUid = d.calendarUid, snapshotSequence = d.calendarSequence;
-  const snapshotSlots = d.calendarSlots;
+async function buildIcsForExport(now = new Date()) {
+  const d = pen();
   // What the last export left live in the user's calendar, and so the only
   // thing there is to retire. Absent on a pen that exported before per-step
   // events existed — back then the single "dose" slot was the whole series —
   // and empty on a pen that has never exported at all, which has nothing to
   // cancel and must not be sent tombstones for events that don't exist.
   const previousSlots = d.calendarSlots ?? ((d.calendarSequence || 0) > 0 ? [ "dose" ] : []);
+  // Nothing to schedule and nothing to withdraw. An empty pen that HAS
+  // published reminders falls through, so it can cancel them.
+  if (remainingDoses() < 1 && !previousSlots.length) return null;
 
-  if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
-  d.calendarSequence = (d.calendarSequence || 0) + 1;
-  const series = icsSeries(d, segments, previousSlots);
-  d.calendarSlots = series.events.map(e => e.slot);
-  try {
-    // bumpCalendarSequence: this write's INTENT is to advance the counter,
-    // so on a 409 the conflict handler must rebase the bump onto whatever
-    // the winning device already stored, not silently keep this device's
-    // now-stale guess (see the merge-policy comment in persistPen).
-    await persistPen(activePen, { bumpCalendarSequence: true });
-  } catch (e) {
-    d.calendarUid = snapshotUid;
-    d.calendarSequence = snapshotSequence;
-    d.calendarSlots = snapshotSlots;
-    throw e;
+  const snapshotUid = d.calendarUid, snapshotSequence = d.calendarSequence;
+  const snapshotSlots = d.calendarSlots;
+
+  // Two passes at most. persistPen's 409 handler adopts the winning device's
+  // plan and doses, so a series computed before it can describe a pen that no
+  // longer exists — and publishing that under a HIGHER sequence would overwrite
+  // the winner's correct schedule with this tab's stale ladder, while leaving
+  // the slots it introduced live. When the merge moves anything the series
+  // feeds on, recompute against the merged state and write again. A second
+  // conflict is left to persistPen, which fails loudly rather than looping.
+  let series;
+  for (let attempt = 0; ; attempt++) {
+    const before = seriesInputs(d);
+    const plan = activePlan();
+    const segments = plan
+      ? penDoseSegments(plan, pens, {
+        clicksFor, remainingClicks: remainingClicks(), maxDialClicks: d.maxDialClicks
+      })
+      : [];
+
+    if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
+    d.calendarSequence = (d.calendarSequence || 0) + 1;
+    series = icsSeries(d, segments, previousSlots);
+    d.calendarSlots = series.events.map(e => e.slot);
+    try {
+      // bumpCalendarSequence: this write's INTENT is to advance the counter,
+      // so on a 409 the conflict handler must rebase the bump onto whatever
+      // the winning device already stored, not silently keep this device's
+      // now-stale guess (see the merge-policy comment in persistPen).
+      await persistPen(activePen, { bumpCalendarSequence: true });
+    } catch (e) {
+      d.calendarUid = snapshotUid;
+      d.calendarSequence = snapshotSequence;
+      d.calendarSlots = snapshotSlots;
+      throw e;
+    }
+    if (attempt > 0 || seriesInputs(d) === before) break;
   }
   // The same entries the on-screen forecast reads its time from, so the two
   // surfaces cannot name different times (#37's one-proxy rule). Plan-scoped

@@ -73,7 +73,11 @@ export function buildIcs(pen, penId, series, now = new Date(), entriesForTime = 
   const events = series?.events ?? [];
   const cancelled = series?.cancelled ?? [];
   const totalDoses = events.reduce((sum, e) => sum + e.doses, 0);
-  if (totalDoses < 1) return null;
+  // Nothing to say only when there is nothing to schedule AND nothing to
+  // retire. A pen that has run out still owes the user an export: its old
+  // reminders are still in the calendar telling them to inject, and a
+  // cancellation-only file is the only thing that takes them back.
+  if (totalDoses < 1 && !cancelled.length) return null;
 
   // Doses can be backdated, so the last ENTERED dose isn't the latest one.
   // Anchoring on entry order put the whole series (and the refill event) a
@@ -149,10 +153,7 @@ export function buildIcs(pen, penId, series, now = new Date(), entriesForTime = 
       `DTSTART:${icsDateTime(from)}`,
       `DTEND:${icsDateTime(to)}`
     );
-    // A one-dose segment is a plain event. The last step of a ladder is
-    // routinely a single dose, and COUNT=1 makes some clients draw a recurring
-    // series with one occurrence.
-    if (event.doses > 1) lines.push(rrule(pen.freqDays, event.doses));
+    lines.push(rrule(pen.freqDays, event.doses));
     lines.push(
       `SUMMARY:${summary}`,
       `DESCRIPTION:${description}`,
@@ -193,16 +194,34 @@ export function buildIcs(pen, penId, series, now = new Date(), entriesForTime = 
   // can't afford. That is the right moment to nudge: you need the next pen
   // before the ladder stalls, not before the pen is empty. It's a nudge for the
   // week, not a moment, so it stays all-day.
-  const refill = advance(start, Math.max(0, totalDoses - 2), pen.freqDays);
-  lines.push(
-    "BEGIN:VEVENT",
-    `UID:counta-${uidSuffix}-refill@counta.click`,
-    `SEQUENCE:${sequence}`,
-    `DTSTAMP:${stamp}`,
-    `DTSTART;VALUE=DATE:${icsDate(refill)}`,
-    `SUMMARY:${escapeText(t("ics.refill", { name: pen.name }))}`,
-    "END:VEVENT",
-    "END:VCALENDAR"
-  );
+  //
+  // On a cancellation-only export it is withdrawn rather than moved: it was
+  // published alongside the doses being retired, so leaving it live would keep
+  // telling someone to restock for a schedule that no longer exists. Its
+  // lifecycle stays here, with the event it belongs to, rather than in the
+  // caller's slot bookkeeping — nothing else decides whether a refill exists.
+  if (totalDoses > 0) {
+    const refill = advance(start, Math.max(0, totalDoses - 2), pen.freqDays);
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:counta-${uidSuffix}-refill@counta.click`,
+      `SEQUENCE:${sequence}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDate(refill)}`,
+      `SUMMARY:${escapeText(t("ics.refill", { name: pen.name }))}`,
+      "END:VEVENT"
+    );
+  } else {
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:counta-${uidSuffix}-refill@counta.click`,
+      `SEQUENCE:${sequence}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDate(start)}`,
+      "STATUS:CANCELLED",
+      "END:VEVENT"
+    );
+  }
+  lines.push("END:VCALENDAR");
   return lines.join("\r\n") + "\r\n";
 }
