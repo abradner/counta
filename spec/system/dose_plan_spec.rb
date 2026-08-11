@@ -114,16 +114,195 @@ RSpec.describe "Dose plan", type: :system do
       expect(find("#sr-live", visible: :all).text).to start_with("Dose recorded: 8 clicks.")
     end
 
-    it "schedules everything the pen holds, not just this step" do
-      # The export is a question about the pen, not about the plan: four doses
-      # remain at 0.25 mg on the ladder, but the pen holds 37 of them, and a
-      # calendar truncated to the current step silently drops the rest.
+    it "walks the ladder across the whole pen, one event per step" do
+      # This example used to assert COUNT=37 — one recurring event repeating
+      # "dial 8 clicks" for every dose the pen holds at the size on the dial.
+      # That number was a fiction the moment the pen carried a plan: it assumed
+      # the user ignores their own ladder and stays at 0.25 mg forever. RFC 5545
+      # cannot vary SUMMARY across occurrences of one RRULE, so the amount can
+      # only change by splitting the series (#45).
+      #
+      # The half of the old intent that still stands, and is asserted below: the
+      # export must NOT truncate to the current step. It reaches 1.7 mg.
       ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
-      expect(ics).to include("COUNT=37")
-      # The refill nudge lands two doses from the pen running out, which is
-      # 35 weeks away — not two doses from the end of the current step.
+
+      # 296 clicks, 9.6 mg. Each step costs what it costs on THIS pen, and the
+      # pen funds four doses of the first three steps and one of the fourth
+      # before the 28 clicks left can no longer pay for a 52-click dose.
+      expect(ics).to include("dial 8 clicks (≈ 0.26 mg)", "RRULE:FREQ=DAILY;INTERVAL=7;COUNT=4")
+      expect(ics).to include("dial 15 clicks (≈ 0.49 mg)")
+      expect(ics).to include("dial 31 clicks (≈ 1.01 mg)")
+      # The final step is a single dose, and still carries its own COUNT=1 rule:
+      # an earlier cut omitted the RRULE for one-dose events, which made the
+      # unplanned path stop matching what it emitted before this change for a
+      # pen down to its last dose.
+      expect(ics).to include("dial 52 clicks (≈ 1.69 mg)")
+      expect(ics).to include("RRULE:FREQ=DAILY;INTERVAL=7;COUNT=1")
+      expect(ics.scan(/RRULE/).length).to eq(4)
+
+      # One live event per funded step, in order, a fortnight-free chain of
+      # four-dose blocks: today, +28d, +56d, +84d.
+      # DTEND is what separates a live event from a tombstone — a cancelled one
+      # carries UID/SEQUENCE/DTSTAMP/DTSTART too, and a laxer regex here matched
+      # the cancelled s4 as though the pen had funded a fifth step.
+      starts = ics.scan(
+        /UID:[^\n]*-dose-s(\d)@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:(\d{8})T\d{6}\r\nDTEND:/
+      )
+      expect(starts.map(&:first)).to eq(%w[0 1 2 3])
+      expect(starts.map { |_, d| Date.parse(d) })
+        .to eq([ 0, 28, 56, 84 ].map { |n| browser_today + n })
+
+      # Nothing is cancelled, because this pen has never exported: there is no
+      # event in anyone's calendar to retire. An earlier cut sent a tombstone
+      # for every step the plan could name — including 2.4 mg, which this pen
+      # never reaches — and clients materialise a placeholder for a UID they
+      # have never seen, so three junk events landed on today's date.
+      expect(ics).not_to include("STATUS:CANCELLED")
+
+      # Two doses before the ladder stalls — 13 doses funded, so ordinal 11,
+      # which is 77 days out. Asserted exactly: a `>` comparison here passed
+      # for the old 245-day answer too, and would have proved nothing.
       refill = ics[/UID:[^\n]*-refill@counta\.click.*?DTSTART;VALUE=DATE:(\d{8})/m, 1]
-      expect(Date.parse(refill)).to be > browser_today + 200
+      expect(Date.parse(refill)).to eq(browser_today + 77)
+    end
+
+    it "chains segments by the same interval the recurrence steps by" do
+      # The fractional-cadence branch had no coverage at all, and it is the one
+      # where the recurrence and the chaining are computed separately and can
+      # disagree: the RRULE steps whole hours per occurrence, so a segment's
+      # start has to be that same integer times the doses before it. Rounding
+      # the whole span instead drifts — at freqDays 1.1, two doses are 52 h
+      # apart by the rule but 53 h by the span, compounding down the ladder.
+      # 3.5 days is the only fractional cadence the form offers and 84 h is
+      # exact, so this pins the branch rather than reproducing that drift.
+      click_button "Edit this pen’s data"
+      select "Twice a week", from: "f-freq"
+      save_pen(batch: "LP1234", expiry: "2027-06")
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(ics).to include("RRULE:FREQ=HOURLY;INTERVAL=84;COUNT=4")
+
+      # Asserted as dates, not as an elapsed-seconds difference: these are
+      # floating local times, and a DST transition inside the span moves the
+      # wall clock without moving the schedule (AGENTS.md §9.6, §9.9). Four
+      # doses at 84 h is 14 days, and the second segment starts there.
+      starts = ics.scan(/-dose-s\d@counta\.click.*?DTSTART:(\d{8})T\d{6}\r\nDTEND:/m).flatten
+      expect(starts.length).to be > 1
+      expect(Date.parse(starts[1]) - Date.parse(starts[0])).to eq(14)
+    end
+
+    it "publishes the merged plan, not the ladder this tab had cached" do
+      # This tab exports the transcribed ladder, so its first step is live.
+      first = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(first).to include("dial 8 clicks (≈ 0.26 mg)")
+
+      # Another device then replaces the plan with a single maintenance step.
+      # This tab's cached updated_at is now stale, so its next export MUST take
+      # persistPen's 409 path — asserted below on the amounts themselves, not
+      # on "no error", so a merge that never ran shows up as the wrong dose
+      # rather than a silently passing test (AGENTS.md §9.8).
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          const [row] = await window.countaTest.rows();
+          const data = await window.countaTest.decryptRow(row);
+          data.plan.steps = [ { units: 2.4, doses: null, sourceLabel: null } ];
+          await window.countaTest.writeRow(row, data);
+        })().then(arguments[0])
+      JS
+
+      # The series has to be rebuilt from what the merge adopted. Publishing the
+      # cached ladder under a HIGHER sequence would overwrite the other device's
+      # correct schedule with amounts this user is no longer on — the calendar
+      # would win, and it would be wrong.
+      second = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(second).to include("dial 74 clicks (≈ 2.4 mg)")
+      expect(second).not_to include("dial 8 clicks")
+
+      # And only the one step the merged plan actually has is live.
+      live = second.scan(
+        /-dose-s(\d)@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:\d{8}T\d{6}\r\nDTEND:/
+      )
+      expect(live.map(&:first)).to eq(%w[0])
+    end
+
+    it "withdraws the schedule when the pen runs out" do
+      # The pen has published a ladder...
+      first = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(first).to include("RRULE")
+      expect(first).to include("Buy more Wegovy")
+
+      # ...and is then emptied. Before, the export refused outright ("nothing to
+      # schedule") and every reminder it had already published stayed live —
+      # telling someone to keep injecting out of a pen with nothing in it. An
+      # empty pen has nothing to schedule but everything to withdraw.
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          for (let i = 0; i < 4; i++) await window.countaTest.appendDoseTo(0, "2020-01-01", 74);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(ics).not_to be_nil
+      # Every event in the file is a tombstone: no recurrence, and no dose left
+      # to name. The refill nudge goes with them — "buy more" is a statement
+      # about a schedule, and this file is withdrawing one.
+      expect(ics).not_to include("RRULE")
+      expect(ics).not_to include("Buy more Wegovy")
+      expect(ics).to match(/UID:[^\n]*-refill@counta\.click.*?STATUS:CANCELLED/m)
+      vevents = ics.scan(/BEGIN:VEVENT.*?END:VEVENT/m)
+      expect(vevents).not_to be_empty
+      vevents.each { |vevent| expect(vevent).to include("STATUS:CANCELLED") }
+    end
+
+    it "cancels the ladder's events when the plan is removed" do
+      # The first export writes the step series, and records how many step slots
+      # this pen has ever used.
+      page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      # Only the four steps this pen can fund — not the fifth, which the ladder
+      # never reaches and so was never written to a calendar.
+      expect(stored_pen["calendarSlots"]).to eq(%w[dose-s0 dose-s1 dose-s2 dose-s3])
+
+      # That record is the whole reason the field exists. Once the plan is gone
+      # there is no ladder left to enumerate, so a stateless export could not
+      # name the events it wrote last time — and the old series would go on
+      # firing beside the new one: two live sets of dose reminders, at
+      # different amounts, on the same days.
+      page.evaluate_async_script(<<~JS)
+        (async () => {
+          const [row] = await window.countaTest.rows();
+          const data = await window.countaTest.decryptRow(row);
+          data.plan = null;
+          await window.countaTest.writeRow(row, data);
+        })().then(arguments[0])
+      JS
+      visit "/"
+      click_button "Unlock with passkey"
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      # The unplanned series is live again...
+      expect(ics).to match(
+        /UID:[^\n]*-dose@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:[^\r]+\r\nDTEND:/
+      )
+      # ...and every step slot the last export left live is retired, not just
+      # the ones some current plan happens to still name.
+      step_events = ics.scan(/UID:[^\n]*-dose-s(\d)@counta\.click.*?END:VEVENT/m)
+      expect(step_events.map(&:first)).to eq(%w[0 1 2 3])
+      ics.scan(/UID:[^\n]*-dose-s\d+@counta\.click.*?END:VEVENT/m)
+        .each { |vevent| expect(vevent).to include("STATUS:CANCELLED") }
+
+      # Cancelled once, and then never again: the slots dropped out of
+      # calendarSlots when they stopped being live, so a re-export has nothing
+      # left to retire. Re-sending a cancellation for a UID the calendar has
+      # already dropped is what makes clients re-create the placeholder, so
+      # "stops" is the property that matters here, not just "happens".
+      again = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(again).not_to include("STATUS:CANCELLED")
+      expect(again).not_to match(/-dose-s\d+@counta\.click/)
     end
 
     it "stores the plan inside the encrypted blob and nothing in plaintext" do
@@ -559,9 +738,25 @@ RSpec.describe "Dose plan", type: :system do
 
       # The export counts what the pen holds at the size actually dialled — it
       # used to read the plan's at-this-step number and conclude a full pen had
-      # nothing left to schedule, which was simply untrue.
+      # nothing left to schedule, which was simply untrue. The ladder walk
+      # (#45) can reintroduce exactly that: a 20 mg step costs 617 clicks on a
+      # 296-click pen, so it funds no doses and the walk returns nothing. This
+      # is the regression test for the fallback that catches it.
       ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
       expect(ics).to include("COUNT=4")
+
+      # On the legacy single-event UID, and LIVE — it has a DTEND rather than a
+      # tombstone. The ladder path emits -dose-s{n} and cancels this one; the
+      # fallback does the opposite. What must never happen is both, because a
+      # file naming one UID live and cancelled loses the live copy in most
+      # clients, silently deleting the user's whole schedule.
+      expect(ics).to match(
+        /UID:[^\n]*-dose@counta\.click\r\nSEQUENCE:\d+\r\nDTSTAMP:[^\r]+\r\nDTSTART:[^\r]+\r\nDTEND:/
+      )
+      # No step event at all, live or cancelled: the ladder never laid one out
+      # on this pen, so there is nothing in a calendar to retire.
+      expect(ics).not_to match(/-dose-s\d+@counta\.click/)
+      expect(ics).not_to include("STATUS:CANCELLED")
     end
   end
 

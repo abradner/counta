@@ -13,7 +13,7 @@ import { captureDosingTime, lastDoseTime, dosingTime } from "dosing_time";
 import {
   currentPlan, nextDoseStep, dosesLeftAtStep, missedDoses, lastDoseDate,
   daysBetween, stepUndeliverable, planStepError, clicksForPen, isNewerRevision,
-  reachableSteps, priorDosesFor, addDays, planDoses
+  reachableSteps, priorDosesFor, addDays, planDoses, penDoseSegments
 } from "plan";
 import { t, clicks, tNodes } from "i18n";
 
@@ -195,7 +195,7 @@ async function persistPen(p, opts = {}) {
     const snapshot = {
       history: p.data.history, updatedAt: p.updatedAt, archived,
       calendarUid: p.data.calendarUid, calendarSequence: p.data.calendarSequence,
-      plan: p.data.plan
+      calendarSlots: p.data.calendarSlots, plan: p.data.plan
     };
     try {
       const theirs = await decryptPayload(dek, e.body.blob);
@@ -224,6 +224,16 @@ async function persistPen(p, opts = {}) {
       } else if (theirs.calendarSequence != null) {
         p.data.calendarSequence = theirs.calendarSequence;
       }
+      // calendarSlots (#45): the event UIDs the last export left live, so a
+      // later one can retire exactly those once the plan naming them is
+      // shortened or removed. Unioned, not replaced: two devices may have
+      // exported different ladders, and every slot either of them made live is
+      // still sitting in the user's calendar. Dropping one here strands a live
+      // dose reminder; keeping a spare only costs one cancellation that finds
+      // nothing, and it is not re-sent.
+      p.data.calendarSlots = [ ...new Set([
+        ...(theirs.calendarSlots ?? []), ...(p.data.calendarSlots ?? [])
+      ]) ];
       // plan (#21): also not append-only — an edit REPLACES the steps, so
       // there is nothing to union. Same two policies as calendarSequence:
       //   - a write that doesn't mean to touch the plan (logging a dose,
@@ -254,6 +264,7 @@ async function persistPen(p, opts = {}) {
       p.data.history = snapshot.history;
       p.data.calendarUid = snapshot.calendarUid;
       p.data.calendarSequence = snapshot.calendarSequence;
+      p.data.calendarSlots = snapshot.calendarSlots;
       p.data.plan = snapshot.plan;
       p.updatedAt = snapshot.updatedAt;
       archived = snapshot.archived;
@@ -709,6 +720,7 @@ async function savePenForm() {
   // they are what a first save writes.
   const data = {
     history: [], registrationIds: [], calendarUid: null, calendarSequence: 0,
+    calendarSlots: null,
     ...(editingPen?.data ?? {}),
 
     // Everything from here down is owned by this form and always overwritten.
@@ -1421,28 +1433,109 @@ async function openAccountPanel() {
 // supersedes the last one (RFC 5545 SEQUENCE) — see #14 "Re-export shouldn't
 // duplicate". Minted/bumped here, persisted, THEN handed to buildIcs, so
 // icsPreview (test_hooks.js) sees exactly what a real export would.
+// What the export should contain, as UID slots. Two shapes, and the "dose" slot
+// appears in exactly ONE of them — live or cancelled, never both. A file
+// carrying the same UID twice leaves the client to pick, and most take the last
+// occurrence, which would silently cancel the schedule it just published.
+function icsSeries(d, segments, previousSlots) {
+  // Built from the CLICKS, never printed straight from the plan — same rule as
+  // renderForecast. 0.25 mg on this pen is 8 clicks, which is really 0.26 mg,
+  // and a calendar naming the plan's figure would contradict the dial.
+  const summaryFor = c => t(
+    d.counterStyle === "progress" ? "ics.summary_progress" : "ics.summary_numeric",
+    { name: d.name, clicks: clicks(c), units: `${fmtU(unitsForClicks(c))} ${d.unit}` }
+  );
+  // No ladder to lay out — no plan, a ladder already finished, or a current step
+  // this pen cannot dial — falls back to the flat count at the size on the dial,
+  // which clampDose guarantees the pen can deliver. A full pen must never export
+  // an empty calendar just because the plan asked for something impossible (#45).
+  // A pen with nothing left schedules nothing — but it still has to be able to
+  // WITHDRAW what it scheduled before, or the last export's reminders go on
+  // telling someone to inject out of an empty pen. That is the one case where
+  // an export is all tombstones and no doses.
+  const flat = remainingDoses() > 0
+    ? [ { slot: "dose", doses: remainingDoses(), summary: summaryFor(doseClicks) } ]
+    : [];
+  const events = segments.length
+    ? segments.map(s => ({
+      slot: `dose-s${s.stepIndex}`, doses: s.doses, summary: summaryFor(s.clicks)
+    }))
+    : flat;
+
+  // Cancel exactly what the LAST export left live and this one doesn't — never
+  // every slot the plan could name. Cancelling a UID the calendar has never
+  // seen doesn't retire anything; clients materialise a placeholder for it, so
+  // a tombstone for a step the ladder never reached shows up as a junk event on
+  // the anchor date. Deriving it as a difference also means a cancellation is
+  // sent once and then stops: the slot drops out of calendarSlots below, so the
+  // next export doesn't re-cancel it and re-create the placeholder.
+  //
+  // Taking the difference is also what keeps the "dose" slot appearing exactly
+  // once per export, live or cancelled and never both — a file naming one UID
+  // both ways loses the live copy in most clients.
+  const live = new Set(events.map(e => e.slot));
+  return { events, cancelled: previousSlots.filter(slot => !live.has(slot)) };
+}
+
+// Everything the series is derived from, as a comparable value. Used only to
+// notice that a 409 merge moved the ground under a series already computed —
+// see the loop below.
+const seriesInputs = d => JSON.stringify([ d.plan, d.history, d.totalClicks ]);
+
 async function buildIcsForExport(now = new Date()) {
-  if (remainingDoses() < 1) return null;
   const d = pen();
+  // What the last export left live in the user's calendar, and so the only
+  // thing there is to retire. Absent on a pen that exported before per-step
+  // events existed — back then the single "dose" slot was the whole series —
+  // and empty on a pen that has never exported at all, which has nothing to
+  // cancel and must not be sent tombstones for events that don't exist.
+  const previousSlots = d.calendarSlots ?? ((d.calendarSequence || 0) > 0 ? [ "dose" ] : []);
+  // Nothing to schedule and nothing to withdraw. An empty pen that HAS
+  // published reminders falls through, so it can cancel them.
+  if (remainingDoses() < 1 && !previousSlots.length) return null;
+
   const snapshotUid = d.calendarUid, snapshotSequence = d.calendarSequence;
-  if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
-  d.calendarSequence = (d.calendarSequence || 0) + 1;
-  try {
-    // bumpCalendarSequence: this write's INTENT is to advance the counter,
-    // so on a 409 the conflict handler must rebase the bump onto whatever
-    // the winning device already stored, not silently keep this device's
-    // now-stale guess (see the merge-policy comment in persistPen).
-    await persistPen(activePen, { bumpCalendarSequence: true });
-  } catch (e) {
-    d.calendarUid = snapshotUid;
-    d.calendarSequence = snapshotSequence;
-    throw e;
+  const snapshotSlots = d.calendarSlots;
+
+  // Two passes at most. persistPen's 409 handler adopts the winning device's
+  // plan and doses, so a series computed before it can describe a pen that no
+  // longer exists — and publishing that under a HIGHER sequence would overwrite
+  // the winner's correct schedule with this tab's stale ladder, while leaving
+  // the slots it introduced live. When the merge moves anything the series
+  // feeds on, recompute against the merged state and write again. A second
+  // conflict is left to persistPen, which fails loudly rather than looping.
+  let series;
+  for (let attempt = 0; ; attempt++) {
+    const before = seriesInputs(d);
+    const plan = activePlan();
+    const segments = plan
+      ? penDoseSegments(plan, pens, {
+        clicksFor, remainingClicks: remainingClicks(), maxDialClicks: d.maxDialClicks
+      })
+      : [];
+
+    if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
+    d.calendarSequence = (d.calendarSequence || 0) + 1;
+    series = icsSeries(d, segments, previousSlots);
+    d.calendarSlots = series.events.map(e => e.slot);
+    try {
+      // bumpCalendarSequence: this write's INTENT is to advance the counter,
+      // so on a 409 the conflict handler must rebase the bump onto whatever
+      // the winning device already stored, not silently keep this device's
+      // now-stale guess (see the merge-policy comment in persistPen).
+      await persistPen(activePen, { bumpCalendarSequence: true });
+    } catch (e) {
+      d.calendarUid = snapshotUid;
+      d.calendarSequence = snapshotSequence;
+      d.calendarSlots = snapshotSlots;
+      throw e;
+    }
+    if (attempt > 0 || seriesInputs(d) === before) break;
   }
   // The same entries the on-screen forecast reads its time from, so the two
   // surfaces cannot name different times (#37's one-proxy rule). Plan-scoped
   // when there is a plan, because a habit outlives the pen it was observed on.
-  return buildIcs(d, activePen.id, remainingDoses(), doseClicks,
-    `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`, now, timeSourceEntries());
+  return buildIcs(d, activePen.id, series, now, timeSourceEntries());
 }
 
 async function downloadIcs() {

@@ -204,6 +204,70 @@ export function dosesLeftAtStep(plan, pens, { clicksFor, remainingClicks }) {
   return step.dosesLeftAtStep == null ? fitInPen : Math.min(step.dosesLeftAtStep, fitInPen);
 }
 
+// Every dose THIS pen can still deliver, laddered: one entry per step the pen
+// gets to, in order, each with the clicks that step costs on this pen.
+//
+// Read this next to `dosesLeftAtStep` above, which deliberately stops at the
+// step boundary — the two look contradictory and are not, because they answer
+// different questions. `dosesLeftAtStep` answers "how many doses at THIS
+// amount", and walking on would mean costing the next step against a pen we
+// have not seen. This function answers "what does THIS pen have left to give",
+// and every dose it describes is delivered by the pen in front of the user,
+// whose clicks-per-unit ratio is right here. The SKU question (issue #19) is
+// about the NEXT pen, and nothing here asks it: a new pen mints its own
+// `calendarUid` and exports its own series.
+//
+// Consumer: the ladder-aware calendar export (#45). Returns [] when there is
+// nothing laddered to say — no plan, a finished ladder, or a current step this
+// pen cannot dial — and the caller falls back to the pen's own flat count.
+// That fallback is load-bearing: a plan asking for more than the dial allows
+// must not make a full pen export an empty calendar (issue #45, and the
+// regression it reintroduces is pinned by dose_plan_spec's "still exports a
+// calendar for a pen the plan has outgrown").
+export function penDoseSegments(plan, pens, { clicksFor, remainingClicks, maxDialClicks }) {
+  const position = nextDoseStep(plan, pens);
+  if (!position || position.complete) return [];
+
+  const steps = plan.steps;
+  const segments = [];
+  let remaining = remainingClicks;
+
+  for (let i = position.index; i < steps.length; i++) {
+    const step = steps[i];
+    // Checked BEFORE dividing: a step that rounds to zero clicks on this pen
+    // would otherwise divide by zero and claim infinite doses.
+    if (planStepError(step, { clicksFor, maxDialClicks })) break;
+
+    const clicks = clicksFor(step.units);
+    const fit = Math.floor(remaining / clicks);
+    // The step in progress has had some of its doses taken already; later ones
+    // are whole. null means open-ended — "stay here until I change it".
+    const wanted = i === position.index ? position.dosesLeftAtStep : step.doses;
+
+    // An open-ended step absorbs every dose the pen has left, and nothing after
+    // it is reachable (see reachableSteps). Structural, not arithmetic: relying
+    // on the exhaustion check below to end the walk would run on for a step
+    // whose dose count only looks satisfied.
+    if (wanted == null) {
+      if (fit > 0) segments.push({ stepIndex: i, units: step.units, clicks, doses: fit });
+      break;
+    }
+
+    // Clamped because a blob from another device is not this client's form: a
+    // negative dose count would otherwise make the walk skip a step while
+    // leaving its clicks unspent.
+    const want = Math.max(0, wanted);
+    const doses = Math.min(want, fit);
+    if (doses > 0) {
+      segments.push({ stepIndex: i, units: step.units, clicks, doses });
+      remaining -= doses * clicks;
+    }
+    // Funding fewer doses than the step asked for means the pen is spent.
+    if (doses < want) break;
+  }
+  return segments;
+}
+
 /* ============ gaps ============ */
 
 // Whole days between two local calendar dates.
