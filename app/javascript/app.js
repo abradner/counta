@@ -13,7 +13,7 @@ import { captureDosingTime, lastDoseTime, dosingTime } from "dosing_time";
 import {
   currentPlan, nextDoseStep, dosesLeftAtStep, missedDoses, lastDoseDate,
   daysBetween, stepUndeliverable, planStepError, clicksForPen, isNewerRevision,
-  reachableSteps, priorDosesFor, addDays, planDoses
+  reachableSteps, priorDosesFor, addDays, planDoses, penDoseSegments
 } from "plan";
 import { t, clicks, tNodes } from "i18n";
 
@@ -195,7 +195,7 @@ async function persistPen(p, opts = {}) {
     const snapshot = {
       history: p.data.history, updatedAt: p.updatedAt, archived,
       calendarUid: p.data.calendarUid, calendarSequence: p.data.calendarSequence,
-      plan: p.data.plan
+      calendarSteps: p.data.calendarSteps, plan: p.data.plan
     };
     try {
       const theirs = await decryptPayload(dek, e.body.blob);
@@ -224,6 +224,13 @@ async function persistPen(p, opts = {}) {
       } else if (theirs.calendarSequence != null) {
         p.data.calendarSequence = theirs.calendarSequence;
       }
+      // calendarSteps (#45): a high-water mark of the step-event UIDs this pen
+      // has ever exported, so a later export can still CANCEL them once the
+      // plan that named them is shortened or removed. Always the max, whatever
+      // this write intended — the two devices may have exported different
+      // ladders, and the set needing cancellation is the union of both. Losing
+      // a step here strands a live dose reminder in someone's calendar.
+      p.data.calendarSteps = Math.max(theirs.calendarSteps || 0, p.data.calendarSteps || 0);
       // plan (#21): also not append-only — an edit REPLACES the steps, so
       // there is nothing to union. Same two policies as calendarSequence:
       //   - a write that doesn't mean to touch the plan (logging a dose,
@@ -254,6 +261,7 @@ async function persistPen(p, opts = {}) {
       p.data.history = snapshot.history;
       p.data.calendarUid = snapshot.calendarUid;
       p.data.calendarSequence = snapshot.calendarSequence;
+      p.data.calendarSteps = snapshot.calendarSteps;
       p.data.plan = snapshot.plan;
       p.updatedAt = snapshot.updatedAt;
       archived = snapshot.archived;
@@ -709,6 +717,7 @@ async function savePenForm() {
   // they are what a first save writes.
   const data = {
     history: [], registrationIds: [], calendarUid: null, calendarSequence: 0,
+    calendarSteps: 0,
     ...(editingPen?.data ?? {}),
 
     // Everything from here down is owned by this form and always overwritten.
@@ -1421,12 +1430,62 @@ async function openAccountPanel() {
 // supersedes the last one (RFC 5545 SEQUENCE) — see #14 "Re-export shouldn't
 // duplicate". Minted/bumped here, persisted, THEN handed to buildIcs, so
 // icsPreview (test_hooks.js) sees exactly what a real export would.
+// What the export should contain, as UID slots. Two shapes, and the "dose" slot
+// appears in exactly ONE of them — live or cancelled, never both. A file
+// carrying the same UID twice leaves the client to pick, and most take the last
+// occurrence, which would silently cancel the schedule it just published.
+function icsSeries(d, segments) {
+  // Built from the CLICKS, never printed straight from the plan — same rule as
+  // renderForecast. 0.25 mg on this pen is 8 clicks, which is really 0.26 mg,
+  // and a calendar naming the plan's figure would contradict the dial.
+  const summaryFor = c => t(
+    d.counterStyle === "progress" ? "ics.summary_progress" : "ics.summary_numeric",
+    { name: d.name, clicks: clicks(c), units: `${fmtU(unitsForClicks(c))} ${d.unit}` }
+  );
+  // calendarSteps is the high-water mark, already raised for this export below,
+  // so this covers every step slot the pen has EVER written — not just the ones
+  // the current plan has. That is the whole point of storing it: a plan the
+  // user removed, or shortened, leaves nothing to enumerate, and the orphaned
+  // step events would go on firing alongside the new series.
+  const stepSlots = Array.from({ length: d.calendarSteps || 0 }, (_, i) => `dose-s${i}`);
+
+  if (!segments.length) {
+    // No ladder to lay out: no plan, a ladder already finished, or a current
+    // step this pen cannot dial. Falls back to the flat count at the size on
+    // the dial — which clampDose guarantees the pen can deliver — because a
+    // full pen must never export an empty calendar just because the plan asked
+    // for something impossible (issue #45).
+    return {
+      events: [ { slot: "dose", doses: remainingDoses(), summary: summaryFor(doseClicks) } ],
+      cancelled: stepSlots
+    };
+  }
+  const live = new Set(segments.map(s => `dose-s${s.stepIndex}`));
+  return {
+    events: segments.map(s => ({
+      slot: `dose-s${s.stepIndex}`, doses: s.doses, summary: summaryFor(s.clicks)
+    })),
+    cancelled: [ "dose", ...stepSlots.filter(slot => !live.has(slot)) ]
+  };
+}
+
 async function buildIcsForExport(now = new Date()) {
   if (remainingDoses() < 1) return null;
   const d = pen();
+  const plan = activePlan();
+  const segments = plan
+    ? penDoseSegments(plan, pens, {
+      clicksFor, remainingClicks: remainingClicks(), maxDialClicks: d.maxDialClicks
+    })
+    : [];
+
   const snapshotUid = d.calendarUid, snapshotSequence = d.calendarSequence;
+  const snapshotSteps = d.calendarSteps;
   if (!d.calendarUid) d.calendarUid = crypto.randomUUID();
   d.calendarSequence = (d.calendarSequence || 0) + 1;
+  // Monotonic, like the sequence beside it: the only way to cancel a step event
+  // is to still know it was written.
+  d.calendarSteps = Math.max(d.calendarSteps || 0, plan?.steps?.length ?? 0);
   try {
     // bumpCalendarSequence: this write's INTENT is to advance the counter,
     // so on a 409 the conflict handler must rebase the bump onto whatever
@@ -1436,13 +1495,13 @@ async function buildIcsForExport(now = new Date()) {
   } catch (e) {
     d.calendarUid = snapshotUid;
     d.calendarSequence = snapshotSequence;
+    d.calendarSteps = snapshotSteps;
     throw e;
   }
   // The same entries the on-screen forecast reads its time from, so the two
   // surfaces cannot name different times (#37's one-proxy rule). Plan-scoped
   // when there is a plan, because a habit outlives the pen it was observed on.
-  return buildIcs(d, activePen.id, remainingDoses(), doseClicks,
-    `${fmtU(unitsForClicks(doseClicks))} ${d.unit}`, now, timeSourceEntries());
+  return buildIcs(d, activePen.id, icsSeries(d, segments), now, timeSourceEntries());
 }
 
 async function downloadIcs() {
