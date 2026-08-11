@@ -23,6 +23,18 @@ function escapeText(s) {
   return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
+// Whole hours a fractional cadence recurs by. Rounded ONCE, here, and used both
+// to write the RRULE and to step between segments — the two must be the same
+// integer or they disagree about where a segment ends. Rounding the whole span
+// instead (`round(doses * freqDays * 24)`) is the bug that hid here: at
+// freqDays 1.1 the rule steps 26 h an occurrence, so two doses land 52 h apart,
+// while the span rounds 52.8 to 53 and starts the next segment an hour late,
+// compounding down the ladder. Floored at 1 because INTERVAL=0 is not a legal
+// recurrence and would make the whole file unparseable.
+function stepHours(freqDays) {
+  return Math.max(1, Math.round(freqDays * 24));
+}
+
 // One dose reminder, `doses` occurrences apart by the pen's frequency, starting
 // `from`. Whole-day cadences step by calendar days so a 25-hour day still lands
 // on the right date; fractional ones (3.5 = twice weekly) step the wall clock by
@@ -30,16 +42,14 @@ function escapeText(s) {
 function advance(from, doses, freqDays) {
   const d = new Date(from);
   if (Number.isInteger(freqDays)) d.setDate(d.getDate() + doses * freqDays);
-  else d.setHours(d.getHours() + Math.round(doses * freqDays * 24));
+  else d.setHours(d.getHours() + doses * stepHours(freqDays));
   return d;
 }
 
-// Must express the same interval `advance` steps by, or a segment's occurrences
-// and the next segment's start drift apart.
 function rrule(freqDays, count) {
   return Number.isInteger(freqDays)
     ? `RRULE:FREQ=DAILY;INTERVAL=${freqDays};COUNT=${count}`
-    : `RRULE:FREQ=HOURLY;INTERVAL=${Math.round(freqDays * 24)};COUNT=${count}`;
+    : `RRULE:FREQ=HOURLY;INTERVAL=${stepHours(freqDays)};COUNT=${count}`;
 }
 
 // pen: decrypted pen data; penId: server row id, used only as a UID fallback
@@ -108,10 +118,11 @@ export function buildIcs(pen, penId, series, now = new Date(), entriesForTime = 
   ];
 
   // Every event's date is measured from the ORIGINAL anchor by a running dose
-  // ordinal, never by stepping segment-to-segment. On a fractional cadence
-  // (3.5 days) each hop would round separately and drift a whole day over three
-  // segments — three hops of 3 doses give 11+11+11 = 33 days where the true
-  // span is 31.5. One offset, rounded once.
+  // ordinal — the same figure the refill nudge below counts back from, so the
+  // two cannot disagree about where the series ends. Both branches of `advance`
+  // are exact integer field arithmetic (whole calendar days, or whole hours via
+  // stepHours), which is what lets the ordinal be applied in one hop instead of
+  // accumulated segment by segment.
   let ordinal = 0;
   const description = escapeText(t("ics.description"));
 

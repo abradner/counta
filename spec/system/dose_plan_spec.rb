@@ -163,6 +163,32 @@ RSpec.describe "Dose plan", type: :system do
       expect(Date.parse(refill)).to eq(browser_today + 77)
     end
 
+    it "chains segments by the same interval the recurrence steps by" do
+      # The fractional-cadence branch had no coverage at all, and it is the one
+      # where the recurrence and the chaining are computed separately and can
+      # disagree: the RRULE steps whole hours per occurrence, so a segment's
+      # start has to be that same integer times the doses before it. Rounding
+      # the whole span instead drifts — at freqDays 1.1, two doses are 52 h
+      # apart by the rule but 53 h by the span, compounding down the ladder.
+      # 3.5 days is the only fractional cadence the form offers and 84 h is
+      # exact, so this pins the branch rather than reproducing that drift.
+      click_button "Edit this pen’s data"
+      select "Twice a week", from: "f-freq"
+      save_pen(batch: "LP1234", expiry: "2027-06")
+      expect(page).to have_css("#dose-card:not([hidden])", wait: 15)
+
+      ics = page.evaluate_async_script("window.countaTest.icsPreview().then(arguments[0])")
+      expect(ics).to include("RRULE:FREQ=HOURLY;INTERVAL=84;COUNT=4")
+
+      # Asserted as dates, not as an elapsed-seconds difference: these are
+      # floating local times, and a DST transition inside the span moves the
+      # wall clock without moving the schedule (AGENTS.md §9.6, §9.9). Four
+      # doses at 84 h is 14 days, and the second segment starts there.
+      starts = ics.scan(/-dose-s\d@counta\.click.*?DTSTART:(\d{8})T\d{6}\r\nDTEND:/m).flatten
+      expect(starts.length).to be > 1
+      expect(Date.parse(starts[1]) - Date.parse(starts[0])).to eq(14)
+    end
+
     it "cancels the ladder's events when the plan is removed" do
       # The first export writes the step series, and records how many step slots
       # this pen has ever used.
