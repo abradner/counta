@@ -191,19 +191,20 @@ Deployment: this section used to say "Deployment is undecided — don't build fo
 meaning don't write Dockerfiles, manifests, or release plumbing on spec. #52 (`5c0b8b5`,
 2026-08-10) was the asking, and it landed: a production `Dockerfile` (multi-stage Rails build,
 plain Puma, non-root, `PORT=3000`) and `.github/workflows/docker.yml`, which publishes multi-arch
-images to `ghcr.io/<owner>/counta` — `linux/arm64` built natively on `ubuntu-24.04-arm` (the
-cluster is Pi 5 nodes), `linux/amd64` under QEMU. Corrected in place 2026-08-11 per §10
-meta-rule 1. What survives of the old rule: *hosting* is still not this repo's business. The
-cluster manifests live in a separate GitOps repo, and `counta.click` still maps to the §6 dev
-server until that cutover happens. Image and build-time concerns are in scope here; rollout and
-cluster concerns are not — for those, ask.
+images to `ghcr.io/abradner/counta` — the workflow writes `ghcr.io/${{ github.repository }}`, which
+expands to the full `owner/repo`, not a bare repo name. `linux/arm64` is built natively on
+`ubuntu-24.04-arm` (the cluster is Pi 5 nodes), `linux/amd64` under QEMU. Corrected in place
+2026-08-11 per §10 meta-rule 1. What survives of the old rule: *hosting* is still not this repo's
+business. The cluster manifests live in a separate GitOps repo, and `counta.click` still maps to
+the §6 dev server until that cutover happens. Image and build-time concerns are in scope here;
+rollout and cluster concerns are not — for those, ask.
 
 What the publish pipeline actually does:
 
-- **Push to `main`** → build and push `ghcr.io/<repo>:sha-<full-sha>`, then alias `:latest` onto
-  that digest — but only if `main`'s remote tip is *still* the commit that was built. That guard
-  exists because a rerun of an old completed run would otherwise drag `:latest` backwards, which
-  `concurrency:` alone can't catch.
+- **Push to `main`** → build and push `ghcr.io/abradner/counta:sha-<full-sha>`, then alias
+  `:latest` onto that digest — but only if `main`'s remote tip is *still* the commit that was
+  built. That guard exists because a rerun of an old completed run would otherwise drag `:latest`
+  backwards, which `concurrency:` alone can't catch.
 - **Push a `v*` tag** → build and push `:<tag>`. `flavor: latest=false` is deliberate: a tag build
   never moves `:latest`. No `v*` tag has been pushed yet.
 - **`workflow_dispatch`** → manual build on any branch (e.g. to test-deploy one). The `latest`
@@ -474,12 +475,13 @@ Initialized 2026-08-03, from an operator interview (see PR/commit that introduce
   Claude Code reads `AGENTS.md` and not the per-tool files directly.
 - **Skills**: kept both `batch-review` and `independent-commit-review` — operator confirmed both,
   even though `batch-review` won't earn its keep until a genuine multi-PR fan-out happens.
-- **`.claude/skills/batch-review/SKILL.md` Phase 8 (Release)**: deleted — no artifact/tag flow
-  exists (deployment itself is undecided), so the phase had nothing to govern yet. Re-add if/when
-  a release flow is designed. *(2026-08-11: the trigger has half-fired. #52 gave the repo an
-  artifact flow — every merge to `main` publishes an image and moves `:latest` (§7) — but no
-  release process on top of it: no `v*` tag has been cut and nothing consumes tags yet. Left
-  deleted deliberately; re-add when tags actually become the deploy handle, not before.)*
+- **`.claude/skills/batch-review/SKILL.md` Phase 8 (Release)**: deleted at init — *at that time*
+  no artifact/tag flow existed (deployment itself was undecided), so the phase had nothing to
+  govern yet. Re-add if/when a release flow is designed. *(2026-08-11: the trigger has half-fired.
+  #52 gave the repo an artifact flow — every merge to `main` publishes an image and moves
+  `:latest` (§7) — but no release process on top of it: no `v*` tag has been cut and nothing
+  consumes tags yet. Left deleted deliberately; re-add when tags actually become the deploy
+  handle, not before.)*
 - **Template lineage**: this repo is public, so per the init procedure the template's usual
   lineage block (template SHA, synced-through, last-checked) was omitted entirely — the pointer
   lives in the private `abradner/fleet` registry instead (row added/updated at init time:
