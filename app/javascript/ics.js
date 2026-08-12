@@ -2,7 +2,7 @@
 // never a hosted subscription URL — the schedule must not pass through the
 // server. Deterministic UIDs per pen so a re-export replaces cleanly.
 
-import { t, clicks } from "i18n";
+import { t } from "i18n";
 import { dosingTime } from "dosing_time";
 
 function pad(n) { return String(n).padStart(2, "0"); }
@@ -23,14 +23,61 @@ function escapeText(s) {
   return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
+// Whole hours a fractional cadence recurs by. Rounded ONCE, here, and used both
+// to write the RRULE and to step between segments — the two must be the same
+// integer or they disagree about where a segment ends. Rounding the whole span
+// instead (`round(doses * freqDays * 24)`) is the bug that hid here: at
+// freqDays 1.1 the rule steps 26 h an occurrence, so two doses land 52 h apart,
+// while the span rounds 52.8 to 53 and starts the next segment an hour late,
+// compounding down the ladder. Floored at 1 because INTERVAL=0 is not a legal
+// recurrence and would make the whole file unparseable.
+function stepHours(freqDays) {
+  return Math.max(1, Math.round(freqDays * 24));
+}
+
+// One dose reminder, `doses` occurrences apart by the pen's frequency, starting
+// `from`. Whole-day cadences step by calendar days so a 25-hour day still lands
+// on the right date; fractional ones (3.5 = twice weekly) step the wall clock by
+// hours, matching how a floating FREQ=HOURLY rule is read (AGENTS.md §9.6).
+function advance(from, doses, freqDays) {
+  const d = new Date(from);
+  if (Number.isInteger(freqDays)) d.setDate(d.getDate() + doses * freqDays);
+  else d.setHours(d.getHours() + doses * stepHours(freqDays));
+  return d;
+}
+
+function rrule(freqDays, count) {
+  return Number.isInteger(freqDays)
+    ? `RRULE:FREQ=DAILY;INTERVAL=${freqDays};COUNT=${count}`
+    : `RRULE:FREQ=HOURLY;INTERVAL=${stepHours(freqDays)};COUNT=${count}`;
+}
+
 // pen: decrypted pen data; penId: server row id, used only as a UID fallback
 // for pens that predate calendarUid (see below). now: the moment export was
 // pressed — a parameter rather than an inline `new Date()` so callers (and
 // tests) can pin it; defaults to "actually now" for real exports.
+//
+// `series` is what the caller worked out should be scheduled, already in the
+// order it happens:
+//
+//   { events:    [ { slot, doses, summary } ],   // slot names the UID
+//     cancelled: [ slot, ... ] }                 // tombstones, see below
+//
+// A pen with no plan passes one event on slot "dose"; a laddered one passes a
+// "dose-s{n}" event per step it reaches (#45). This module does not know what a
+// plan is — it lays out dates and writes RFC 5545 — so the ladder lives in
+// plan.js#penDoseSegments and the copy in app.js, and neither leaks in here.
+//
 // Returns null if there is nothing left to schedule.
-export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel, now = new Date(),
-                         entriesForTime = null) {
-  if (remainingDoses < 1) return null;
+export function buildIcs(pen, penId, series, now = new Date(), entriesForTime = null) {
+  const events = series?.events ?? [];
+  const cancelled = series?.cancelled ?? [];
+  const totalDoses = events.reduce((sum, e) => sum + e.doses, 0);
+  // Nothing to say only when there is nothing to schedule AND nothing to
+  // retire. A pen that has run out still owes the user an export: its old
+  // reminders are still in the calendar telling them to inject, and a
+  // cancellation-only file is the only thing that takes them back.
+  if (totalDoses < 1 && !cancelled.length) return null;
 
   // Doses can be backdated, so the last ENTERED dose isn't the latest one.
   // Anchoring on entry order put the whole series (and the refill event) a
@@ -51,9 +98,7 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel,
   // the dose schedule above, never from "now".
   const [ hour, minute ] = dosingTime(entriesForTime ?? pen.history, now).split(":").map(Number);
   start.setHours(hour, minute, 0, 0);
-  const end = new Date(start.getTime() + 5 * 60 * 1000);
 
-  const wholeDays = Number.isInteger(pen.freqDays);
   // DTSTAMP is a real UTC instant per RFC 5545 — building it from the local
   // calendar date and suffixing "Z" put it on the wrong day for anyone whose
   // local date differs from UTC's.
@@ -76,61 +121,107 @@ export function buildIcs(pen, penId, remainingDoses, doseClicks, doseUnitsLabel,
     "METHOD:PUBLISH"
   ];
 
-  // One recurring event covers every remaining dose; COUNT shrinks on
-  // re-export as doses are logged, and the fixed UID replaces the old series.
-  //
-  // The wording must follow counter_style exactly as the in-app readout does
-  // (docs/design-notes.md). Saying "counter set to N clicks" is dangerous on a
-  // numeric pen where clicks != units: on a Tresiba U200 one click is 2 U, so
-  // a 12 U dose is 6 clicks, and a user dialling until the window reads 6
-  // would take half their dose. This text is read months later, in a calendar,
-  // without the app open — it has to stand alone.
-  const summary = escapeText(t(
-    pen.counterStyle === "progress" ? "ics.summary_progress" : "ics.summary_numeric",
-    { name: pen.name, clicks: clicks(doseClicks), units: doseUnitsLabel }
-  ));
-  lines.push(
-    "BEGIN:VEVENT",
-    `UID:counta-${uidSuffix}-dose@counta.click`,
-    `SEQUENCE:${sequence}`,
-    `DTSTAMP:${stamp}`,
-    `DTSTART:${icsDateTime(start)}`,
-    `DTEND:${icsDateTime(end)}`
-  );
-  if (wholeDays) {
-    lines.push(`RRULE:FREQ=DAILY;INTERVAL=${pen.freqDays};COUNT=${remainingDoses}`);
-  } else {
-    // Fractional frequency (e.g. 3.5 days = twice a week): hourly interval.
-    lines.push(`RRULE:FREQ=HOURLY;INTERVAL=${Math.round(pen.freqDays * 24)};COUNT=${remainingDoses}`);
-  }
-  lines.push(
-    `SUMMARY:${summary}`,
-    `DESCRIPTION:${escapeText(t("ics.description"))}`,
-    // Fires at event time. Some clients silently drop an alarm missing
-    // ACTION or DESCRIPTION, so both are set explicitly rather than relying
-    // on TRIGGER alone.
-    "BEGIN:VALARM",
-    "ACTION:DISPLAY",
-    `DESCRIPTION:${summary}`,
-    "TRIGGER:PT0M",
-    "END:VALARM",
-    "END:VEVENT"
-  );
+  // Every event's date is measured from the ORIGINAL anchor by a running dose
+  // ordinal — the same figure the refill nudge below counts back from, so the
+  // two cannot disagree about where the series ends. Both branches of `advance`
+  // are exact integer field arithmetic (whole calendar days, or whole hours via
+  // stepHours), which is what lets the ordinal be applied in one hop instead of
+  // accumulated segment by segment.
+  let ordinal = 0;
+  const description = escapeText(t("ics.description"));
 
-  // "Buy more" lands ~2 doses before run-out (or on the last dose for tiny
-  // remainders). It's a nudge for the week, not a moment, so it stays all-day.
-  const refillIndex = Math.max(0, remainingDoses - 2);
-  const refill = new Date(start);
-  refill.setDate(refill.getDate() + Math.round(refillIndex * pen.freqDays));
-  lines.push(
-    "BEGIN:VEVENT",
-    `UID:counta-${uidSuffix}-refill@counta.click`,
-    `SEQUENCE:${sequence}`,
-    `DTSTAMP:${stamp}`,
-    `DTSTART;VALUE=DATE:${icsDate(refill)}`,
-    `SUMMARY:${escapeText(t("ics.refill", { name: pen.name }))}`,
-    "END:VEVENT",
-    "END:VCALENDAR"
-  );
+  for (const event of events) {
+    const from = advance(start, ordinal, pen.freqDays);
+    const to = new Date(from);
+    // Field arithmetic, not `+5*60*1000`: adding an instant to a floating local
+    // time re-crosses the §9.6 hazard the rest of this file avoids.
+    to.setMinutes(to.getMinutes() + 5);
+
+    // The wording must follow counter_style exactly as the in-app readout does
+    // (docs/design-notes.md). Saying "counter set to N clicks" is dangerous on
+    // a numeric pen where clicks != units: on a Tresiba U200 one click is 2 U,
+    // so a 12 U dose is 6 clicks, and a user dialling until the window reads 6
+    // would take half their dose. This text is read months later, in a
+    // calendar, without the app open — it has to stand alone. The caller builds
+    // it per event, because a laddered pen says something different each step.
+    const summary = escapeText(event.summary);
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:counta-${uidSuffix}-${event.slot}@counta.click`,
+      `SEQUENCE:${sequence}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${icsDateTime(from)}`,
+      `DTEND:${icsDateTime(to)}`
+    );
+    lines.push(rrule(pen.freqDays, event.doses));
+    lines.push(
+      `SUMMARY:${summary}`,
+      `DESCRIPTION:${description}`,
+      // Fires at event time. Some clients silently drop an alarm missing
+      // ACTION or DESCRIPTION, so both are set explicitly rather than relying
+      // on TRIGGER alone.
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:${summary}`,
+      "TRIGGER:PT0M",
+      "END:VALARM",
+      "END:VEVENT"
+    );
+    ordinal += event.doses;
+  }
+
+  // Tombstones. Advancing a step stops emitting the step before it, which would
+  // otherwise leave its occurrences sitting in the user's calendar forever.
+  // STATUS:CANCELLED inside METHOD:PUBLISH rather than a METHOD:CANCEL message:
+  // this is a downloaded file, not an iTIP exchange, and one file cannot carry
+  // two METHODs. What makes a client honour it is the shared SEQUENCE above,
+  // which is strictly higher than the export that created the event.
+  for (const slot of cancelled) {
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:counta-${uidSuffix}-${slot}@counta.click`,
+      `SEQUENCE:${sequence}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${icsDateTime(start)}`,
+      "STATUS:CANCELLED",
+      "END:VEVENT"
+    );
+  }
+
+  // "Buy more" lands ~2 doses before the pen stops being able to follow the
+  // plan — which on a ladder is earlier than the barrel running dry, because
+  // the last step it can fund usually leaves clicks stranded behind a dose it
+  // can't afford. That is the right moment to nudge: you need the next pen
+  // before the ladder stalls, not before the pen is empty. It's a nudge for the
+  // week, not a moment, so it stays all-day.
+  //
+  // On a cancellation-only export it is withdrawn rather than moved: it was
+  // published alongside the doses being retired, so leaving it live would keep
+  // telling someone to restock for a schedule that no longer exists. Its
+  // lifecycle stays here, with the event it belongs to, rather than in the
+  // caller's slot bookkeeping — nothing else decides whether a refill exists.
+  if (totalDoses > 0) {
+    const refill = advance(start, Math.max(0, totalDoses - 2), pen.freqDays);
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:counta-${uidSuffix}-refill@counta.click`,
+      `SEQUENCE:${sequence}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDate(refill)}`,
+      `SUMMARY:${escapeText(t("ics.refill", { name: pen.name }))}`,
+      "END:VEVENT"
+    );
+  } else {
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:counta-${uidSuffix}-refill@counta.click`,
+      `SEQUENCE:${sequence}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDate(start)}`,
+      "STATUS:CANCELLED",
+      "END:VEVENT"
+    );
+  }
+  lines.push("END:VCALENDAR");
   return lines.join("\r\n") + "\r\n";
 }

@@ -1,58 +1,106 @@
-name: Docker
-
-# Builds the production image for every PR and push to main (catching image
-# breakage pre-merge, same spirit as ci.yml's rspec job), but only PUSHES to
-# ghcr.io/abradner/counta on main and version tags — a PR build never
-# publishes. This is the image the Athena cluster's Argo CD gitops repo
-# (athena-gitops) pulls; see AGENTS.md §7.
+name: docker
 
 on:
+  # Pushes: only main and release tags publish. Not every branch push — run
+  # workflow_dispatch on a branch when you actually want an image out of it
+  # (e.g. to test-deploy one).
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+  # PRs build but never push (see `push:` on the build step). Without this a
+  # change to the Dockerfile, .dockerignore or bin/docker-entrypoint gets a
+  # green PR from ci.yml having never been built, and first breaks on the
+  # post-merge main run — which is also the run that moves `:latest`. That is
+  # the "a skipped job is not a passing job" caution in AGENTS.md §7, so the
+  # workflow closes it rather than the doc just warning about it.
   pull_request:
 
 permissions:
   contents: read
   packages: write
 
+# Serialize per ref so an older main build can't finish after a newer one
+# and repoint `latest` backwards. This only protects against overlapping
+# runs — see the tip-check step below for the rerun-after-completion case,
+# which concurrency can't catch.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-push:
+    name: Build image (pushes to ghcr.io on main/tags only)
+    # The cluster runs on arm64 (Pi 5 nodes) — build that natively on GitHub's
+    # arm runners. amd64 is the secondary target, built under QEMU for x86
+    # hosts (local dev, legacy VMs).
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
+      # Nothing to log in for on a PR — it never pushes, and a fork PR's
+      # GITHUB_TOKEN has no packages:write anyway.
+      - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derive tags
-        id: meta
+      - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/abradner/counta
+          images: ghcr.io/${{ github.repository }}
+          # latest=false is load-bearing, not just for the raw-tag rule below:
+          # metadata-action's default flavor still auto-adds `latest` off
+          # type=ref,event=tag for a v* push, which would repoint `latest` on
+          # an old release tag (or a rerun of one) before the guarded step
+          # ever runs. Keep this even though there's no explicit raw `latest`
+          # rule here — `latest` is only ever set by the guarded step below.
+          flavor: |
+            latest=false
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short
+            type=sha,format=long
             type=ref,event=tag
 
-      - name: Build and push
+      - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # PRs build arm64 only — natively, so the smoke test stays a few
+          # minutes rather than the ~15 a QEMU amd64 leg adds. arm64 is what
+          # the cluster actually runs; amd64 is a convenience target and is
+          # still built on every main/tag push before anything publishes.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/arm64' || 'linux/arm64,linux/amd64' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Publish latest (only if still the tip of main)
+        # Guards the case concurrency can't: a rerun of an old completed
+        # workflow run (push OR a manual workflow_dispatch against main)
+        # still targets refs/heads/main and would otherwise republish
+        # `latest` pointing at a stale commit. Only alias `latest` onto this
+        # build's digest if HEAD is still what main actually points at right
+        # now. Never fires for tag pushes or branch dispatches — `latest`
+        # only ever tracks main.
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          remote_sha=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ -z "$remote_sha" ]; then
+            echo "::error::git ls-remote returned no SHA for refs/heads/main — refusing to guess, skipping latest."
+            exit 1
+          fi
+          if [ "$remote_sha" = "${{ github.sha }}" ]; then
+            docker buildx imagetools create \
+              -t ghcr.io/${{ github.repository }}:latest \
+              ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          else
+            echo "main has moved to $remote_sha since this run started (${{ github.sha }}) — skipping latest."
+          fi

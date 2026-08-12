@@ -1,37 +1,66 @@
-# Keep the build context small and out of the image: none of this is needed
-# to run the app, and some of it (specs, docs) would otherwise bloat every
-# layer that COPYs the whole tree.
+# See https://docs.docker.com/engine/reference/builder/#dockerignore-file for more about ignoring files.
 
-.git
-.github
+# Ignore git directory.
+/.git/
+/.gitignore
+
+# Ignore bundler config.
+/.bundle
+
+# Ignore all environment files.
+/.env*
+
+# Ignore all default key files.
+/config/master.key
+/config/credentials/*.key
+
+# Ignore all logfiles and tempfiles.
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+
+# Ignore pidfiles, but keep the directory.
+/tmp/pids/*
+!/tmp/pids/.keep
+
+# Ignore storage (uploaded files in development and any SQLite databases).
+/storage/*
+!/storage/.keep
+/tmp/storage/*
+!/tmp/storage/.keep
+
+# Ignore assets.
+/node_modules/
+/app/assets/builds/*
+!/app/assets/builds/.keep
+/public/assets
+
+# Ignore CI service files.
+/.github
+
+# Ignore development files
+/.devcontainer
+
+# Ignore Docker-related files
+/.dockerignore
+/Dockerfile*
+
+# mise config — a dev-machine toolchain pin the image has no use for (it
+# ships a fixed Ruby already). This comment used to say the committed copy
+# "currently embeds production env values"; it does not — mise.toml's [env]
+# block is commented out and says never to put required production config
+# there. Corrected rather than left standing, per principle 1: the exclusion
+# is still right, the stated reason wasn't.
+/mise.toml
 
 # Local dev/agent tooling — not part of the shipped app.
-.claude
-.clinerules
-.cursor
-.opencode
-.windsurf
+/.claude
+/.clinerules
+/.cursor
+/.opencode
+/.windsurf
 
-# Tests, docs, screenshots — dev-time only.
-spec
-docs
-
-# Runtime state that shouldn't be baked into an image.
-log
-tmp
-storage/*
-
-# Local secrets/config — never in a built image; production reads these
-# from ENV/mounted secrets instead (see Dockerfile header).
-.env
-.env.*
-config/master.key
-
-# Bundler/asset build artifacts — the image builds its own.
-.bundle
-vendor/bundle
-public/assets
-app/assets/builds/*
-
-.DS_Store
-*.log
+# Specs and docs are dev-time only; no need to bloat the build context.
+/spec
+/docs

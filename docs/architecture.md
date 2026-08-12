@@ -133,6 +133,18 @@ costing the next step against this pen's ratio would assume a pen we know
 nothing about until SKUs are modelled (issue #19), so "doses left" on a
 planned pen means "at this amount" and the label says so.
 
+`plan.js#penDoseSegments` sits next to that second rule and appears to break
+it — it walks the whole ladder. It does not, and the difference is worth
+holding onto, because a reader will eventually try to collapse the two.
+`dosesLeftAtStep` answers "how many doses at THIS amount", where walking on
+means costing a step against a pen we have not seen. `penDoseSegments` answers
+"what does THIS pen have left to give", and every dose it describes is
+delivered by the pen in front of the user, whose ratio is right here. The
+calendar export is what needed the second question: `calendarUid` lives in the
+pen's own blob, so an exported series only ever describes one pen, and the next
+pen mints its own. #19 is about what the *next* pen holds, and nothing in that
+walk asks it.
+
 ## Decision 4 — The server owns every date
 
 Dates cross the wire as UTC ISO 8601; the browser only formats them for the
