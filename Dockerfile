@@ -4,6 +4,27 @@
 # Production image. Build and run by hand:
 # docker build -t counta .
 # docker run -d -p 3000:3000 -e RAILS_MASTER_KEY=<value from config/master.key> -e DATABASE_URL=<postgres url> --name counta counta
+#
+# Runtime ENV contract:
+#   Required — the app fails fast at boot without these, by design (AGENTS.md
+#   §8 "Configuration": no fallback defaults for required config):
+#     DATABASE_URL       postgresql://… — config/database.yml production block
+#     RAILS_MASTER_KEY   decrypts config/credentials.yml.enc
+#   Optional tuning knobs (safe defaults; override only if needed):
+#     PORT               puma listen port — defaulted to 3000 below, NOT
+#                        config/puma.rb's 25425 (the dev host's haproxy
+#                        mapping, meaningless in a container)
+#     WEB_CONCURRENCY    puma worker processes (puma default: 1)
+#     RAILS_MAX_THREADS  puma threads + AR pool size (default: 3)
+#     RAILS_LOG_LEVEL    (default: info)
+#     WEBAUTHN_ORIGIN, WEBAUTHN_RP_ID, RAILS_HOSTS
+#                        override the production WebAuthn origin/RP ID and the
+#                        Host allowlist (default: counta.click) — see
+#                        lib/webauthn_env_config.rb for why these are allowed
+#                        defaults under the fail-fast rule.
+#
+# The entrypoint (bin/docker-entrypoint) runs db:prepare for the server and a
+# pending-migration preflight for everything else — see that file.
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version
 ARG RUBY_VERSION=4.0.5
@@ -58,10 +79,18 @@ FROM base
 # Run and own only the runtime files as a non-root user for security
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
-USER 1000:1000
 
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 COPY --chown=rails:rails --from=build /rails /rails
+
+# The dirs puma and Rails write to at runtime. .dockerignore strips log/ and
+# tmp/ contents from the build context, so without this a non-root container
+# can hit a missing (or root-owned) tmp/pids on boot. Done as root after the
+# COPYs — a pre-COPY mkdir would leave them root-owned, and post-USER we
+# couldn't chown.
+RUN mkdir -p log tmp/pids tmp/cache && chown -R rails:rails log tmp
+
+USER 1000:1000
 
 # Entrypoint prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]

@@ -78,7 +78,7 @@ A conflict with a principle is a stop-and-check, never something to quietly work
 | Framework | Rails | |
 | Database | PostgreSQL | |
 | Testing | RSpec | |
-| Deployment | container image → `ghcr.io` | `Dockerfile` + `.github/workflows/docker.yml`; cluster manifests live elsewhere — see §7 (this row read "undecided" until #52) |
+| Deployment | Athena (Talos k8s, Argo CD gitops) | image from `ghcr.io`, built by `Dockerfile` + `.github/workflows/docker.yml`; cluster manifests live in `athena-gitops` — see §7 (this row read "undecided" until #52) |
 
 ## 4. Critical Architectural Rules
 
@@ -187,38 +187,51 @@ run `mise exec -- bundle exec rubocop` locally before pushing. (This sentence us
 linter is adopted yet"; that was stale from before #1 landed the lint job — corrected 2026-08-09
 per §10 meta-rule 1.)
 
-Deployment: this section used to say "Deployment is undecided — don't build for it until asked",
-meaning don't write Dockerfiles, manifests, or release plumbing on spec. #52 (`5c0b8b5`,
-2026-08-10) was the asking, and it landed: a production `Dockerfile` (multi-stage Rails build,
-plain Puma, non-root, `PORT=3000`) and `.github/workflows/docker.yml`, which publishes multi-arch
-images to `ghcr.io/abradner/counta` — the workflow writes `ghcr.io/${{ github.repository }}`, which
-expands to the full `owner/repo`, not a bare repo name. `linux/arm64` is built natively on
-`ubuntu-24.04-arm` (the cluster is Pi 5 nodes), `linux/amd64` under QEMU. Corrected in place
-2026-08-11 per §10 meta-rule 1. What survives of the old rule: *hosting* is still not this repo's
-business. The cluster manifests live in a separate GitOps repo, and `counta.click` still maps to
-the §6 dev server until that cutover happens. Image and build-time concerns are in scope here;
-rollout and cluster concerns are not — for those, ask.
+**Deployment target is decided.** This section used to say "Deployment is undecided — don't build
+for it until asked", meaning don't write Dockerfiles, manifests, or release plumbing on spec.
+Issues #6/#10 were the asking; #52 (`5c0b8b5`) landed the image and pipeline and #51 the app-side
+config. Corrected in place per §10 meta-rule 1.
 
-What the publish pipeline actually does:
+The target is the **Athena** cluster — Talos Kubernetes, Argo CD gitops, workers are Raspberry Pi
+arm64. The gitops manifests (Deployment, Service, Ingress, the retention-sweep CronJob for
+`rake pens:purge`, External Secrets pulling `DATABASE_URL`/`RAILS_MASTER_KEY` from 1Password) live
+in the separate `athena-gitops` repo, **not here** — this repo's responsibility ends at publishing
+a runnable image. What survives of the old rule is exactly that boundary: image and build-time
+concerns are in scope here; rollout and cluster concerns are not — for those, ask.
 
-- **Push to `main`** → build and push `ghcr.io/abradner/counta:sha-<full-sha>`, then alias
-  `:latest` onto that digest — but only if `main`'s remote tip is *still* the commit that was
-  built. That guard exists because a rerun of an old completed run would otherwise drag `:latest`
-  backwards, which `concurrency:` alone can't catch.
+Cutover has not happened. `counta.click` still maps to the §6 dev server; flipping DNS/HAProxy to
+the cluster is a separate tracked step (`docs/repo-map.md` R-005, issue #10). **Don't treat "the
+image builds" as "cutover happened."**
+
+What the publish pipeline actually does (`.github/workflows/docker.yml`, image
+`ghcr.io/abradner/counta` — the workflow writes `ghcr.io/${{ github.repository }}`, which expands
+to the full `owner/repo`, not a bare repo name):
+
+- **Push to `main`** → build and push `:sha-<full-sha>`, then alias `:latest` onto that digest —
+  but only if `main`'s remote tip is *still* the commit that was built. That guard exists because
+  a rerun of an old completed run would otherwise drag `:latest` backwards, which `concurrency:`
+  alone can't catch.
 - **Push a `v*` tag** → build and push `:<tag>`. `flavor: latest=false` is deliberate: a tag build
   never moves `:latest`. No `v*` tag has been pushed yet.
+- **Pull request** → builds `linux/arm64` natively and pushes **nothing**. A pre-merge smoke test
+  that the image still builds; arm64-only so it costs minutes, not the ~15 a QEMU amd64 leg adds.
 - **`workflow_dispatch`** → manual build on any branch (e.g. to test-deploy one). The `latest`
   step is skipped for any ref that isn't `main`.
-- **PR and branch pushes** → no image. Only `ci.yml` runs.
+- **Branch pushes** → nothing. Only `ci.yml` runs.
+
+`linux/amd64` is built under QEMU alongside arm64 on every main/tag push, so nothing publishes
+without it; it's a convenience target for x86 hosts, not what the cluster runs.
 
 Two universal cautions, whatever the pipeline:
 
 - **A skipped job is not a passing job.** A green run where path filtering skipped half the suite
-  means that half never saw the commit. Check what actually ran before trusting the check. Live
-  instance: `docker.yml` doesn't run on PRs, so a change to `Dockerfile`, `.dockerignore`, or
-  `bin/docker-entrypoint` gets a green PR from `ci.yml` without ever being built. Its first real
-  build is the post-merge one on `main` — which is also the one that moves `:latest`. Build it
-  locally, or `workflow_dispatch` the branch, before merging image changes.
+  means that half never saw the commit. Check what actually ran before trusting the check. This
+  repo had a live instance of exactly that, written up here between #54 and #51: `docker.yml`
+  didn't run on PRs, so a change to `Dockerfile`, `.dockerignore`, or `bin/docker-entrypoint` got
+  a green PR from `ci.yml` having never been built, and first broke on the post-merge `main` run
+  — the same run that moves `:latest`. #51 closed it structurally by adding the `pull_request`
+  trigger (§10 meta-rule 5: make it mechanically true rather than warning about it in prose).
+  Kept here as the worked example, not as an outstanding gap.
 - **A merge is not a release** — this used to read "if images/artifacts build from tags only,
   merged work has no deployable artifact until a tag exists. Not yet applicable — no
   release/artifact flow exists." Now applicable, and this repo is the *opposite* shape, so the
@@ -226,6 +239,12 @@ Two universal cautions, whatever the pipeline:
   repoints `:latest`, so for anything consuming `latest` **merging is the release** — there is no
   later "and now ship it" step in which to catch a mistake; and (b) a `v*` tag deliberately does
   not move `:latest`, so a tagged release is not what `latest` consumers are running.
+  Concretely, and this is the part that makes (a) bite: the `athena-gitops` manifests track
+  `:latest` with `imagePullPolicy: Always`, so a merge here publishes `:latest` and the next pod
+  restart on the cluster picks it up with no separate release step. That is a known gap on the
+  gitops side — a documented upstream TODO is to pin to `sha-` tags instead — not a property this
+  repo is claiming is good. Until `athena-gitops` moves off `:latest`, a merge to `main` here is
+  closer to a release than the general rule implies.
 
 ## 8. Working Rules
 

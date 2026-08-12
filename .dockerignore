@@ -46,6 +46,21 @@
 /.dockerignore
 /Dockerfile*
 
-# mise config — the committed copy on main currently embeds production env
-# values; never let it into the image.
+# mise config — a dev-machine toolchain pin the image has no use for (it
+# ships a fixed Ruby already). This comment used to say the committed copy
+# "currently embeds production env values"; it does not — mise.toml's [env]
+# block is commented out and says never to put required production config
+# there. Corrected rather than left standing, per principle 1: the exclusion
+# is still right, the stated reason wasn't.
 /mise.toml
+
+# Local dev/agent tooling — not part of the shipped app.
+/.claude
+/.clinerules
+/.cursor
+/.opencode
+/.windsurf
+
+# Specs and docs are dev-time only; no need to bloat the build context.
+/spec
+/docs

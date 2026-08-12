@@ -1,13 +1,20 @@
 name: docker
 
 on:
-  # Automatic only on main (and release tags) — not on every branch/PR push.
-  # Run it manually on a branch via workflow_dispatch when you actually want
-  # an image out of it (e.g. to test-deploy a branch).
+  # Pushes: only main and release tags publish. Not every branch push — run
+  # workflow_dispatch on a branch when you actually want an image out of it
+  # (e.g. to test-deploy one).
   push:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+  # PRs build but never push (see `push:` on the build step). Without this a
+  # change to the Dockerfile, .dockerignore or bin/docker-entrypoint gets a
+  # green PR from ci.yml having never been built, and first breaks on the
+  # post-merge main run — which is also the run that moves `:latest`. That is
+  # the "a skipped job is not a passing job" caution in AGENTS.md §7, so the
+  # workflow closes it rather than the doc just warning about it.
+  pull_request:
 
 permissions:
   contents: read
@@ -23,7 +30,7 @@ concurrency:
 
 jobs:
   build-push:
-    name: Build and push image (ghcr.io)
+    name: Build image (pushes to ghcr.io on main/tags only)
     # The cluster runs on arm64 (Pi 5 nodes) — build that natively on GitHub's
     # arm runners. amd64 is the secondary target, built under QEMU for x86
     # hosts (local dev, legacy VMs).
@@ -34,7 +41,10 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
+      # Nothing to log in for on a PR — it never pushes, and a fork PR's
+      # GITHUB_TOKEN has no packages:write anyway.
       - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -60,8 +70,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/arm64,linux/amd64
-          push: true
+          # PRs build arm64 only — natively, so the smoke test stays a few
+          # minutes rather than the ~15 a QEMU amd64 leg adds. arm64 is what
+          # the cluster actually runs; amd64 is a convenience target and is
+          # still built on every main/tag push before anything publishes.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/arm64' || 'linux/arm64,linux/amd64' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

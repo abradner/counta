@@ -1,8 +1,16 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
+# Exactly one path owns schema changes: the server. A CronJob or a one-off
+# `rake` pod must never race the app applying migrations, so it doesn't get
+# `db:prepare` — but it must not run against a schema it doesn't match
+# either, so it preflights and exits non-zero instead of doing silent damage
+# with a stale schema. `db:abort_if_pending_migrations` is Rails' own check;
+# it also fails if the database isn't there yet, which is the right answer
+# for a purge pod that started before the app ever migrated.
 if [ "${1}" == "./bin/rails" ] && [ "${2}" == "server" ]; then
   ./bin/rails db:prepare
+else
+  ./bin/rails db:abort_if_pending_migrations
 fi
 
 exec "${@}"
