@@ -32,13 +32,16 @@ jobs:
   build-push:
     name: Build image (pushes to ghcr.io on main/tags only)
     # The cluster runs on arm64 (Pi 5 nodes) — build that natively on GitHub's
-    # arm runners. amd64 is the secondary target, built under QEMU for x86
-    # hosts (local dev, legacy VMs).
+    # arm runners. arm64 only: the amd64 target used to be built here under
+    # QEMU on main/tag pushes and dominated wall clock (in mcg, the same
+    # shape, it was ~14 of ~16 minutes — see mcg#9). x86 hosts can
+    # `docker build` locally; if publishing amd64 ever matters again, add a
+    # parallel native ubuntu-24.04 job and merge digests with imagetools
+    # rather than reintroducing QEMU.
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       # Nothing to log in for on a PR — it never pushes, and a fork PR's
@@ -70,16 +73,18 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          # PRs build arm64 only — natively, so the smoke test stays a few
-          # minutes rather than the ~15 a QEMU amd64 leg adds. arm64 is what
-          # the cluster actually runs; amd64 is a convenience target and is
-          # still built on every main/tag push before anything publishes.
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/arm64' || 'linux/arm64,linux/amd64' }}
+          platforms: linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Registry cache, not type=gha: GitHub's Actions cache evicts
+          # entries unused for 7 days, so infrequent builds always started
+          # cold. A buildcache tag on ghcr.io persists until we delete it,
+          # so the bundle-install layer survives between releases. PRs only
+          # read the cache — a fork PR's GITHUB_TOKEN has no packages:write,
+          # and cache writes belong to trusted refs anyway.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref=ghcr.io/{0}:buildcache,mode=max', github.repository) || '' }}
 
       - name: Publish latest (only if still the tip of main)
         # Guards the case concurrency can't: a rerun of an old completed

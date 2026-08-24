@@ -6,10 +6,16 @@ on:
     branches: [ main ]
 
 jobs:
+  # arm64-native runners for both jobs: the athena cluster (deploy target)
+  # is all arm64, so testing on the deploy architecture means a CI-only
+  # architecture bug can't hide. System specs run under cuprite driving
+  # apt/snap Chromium, which ships arm64 — no Chrome-for-Testing
+  # dependency, so nothing here needs an x86 runner.
+
   # Static checks are their own job so a style or advisory failure can't be
   # mistaken for a broken test run, and vice versa.
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
@@ -24,7 +30,7 @@ jobs:
           mise exec -- bundle exec bundle-audit check
 
   rspec:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
 
     services:
       db:
