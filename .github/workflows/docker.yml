@@ -83,6 +83,14 @@ jobs:
           # so the bundle-install layer survives between releases. PRs only
           # read the cache — a fork PR's GITHUB_TOKEN has no packages:write,
           # and cache writes belong to trusted refs anyway.
+          #
+          # Concurrent non-PR runs (e.g. a main push racing a tag push —
+          # concurrency: groups by ref, so it doesn't serialize these) can
+          # both export to this one tag; last write wins. Accepted: the
+          # cache is best-effort, the loser costs one partially-cold build,
+          # never a wrong image. Per-ref tags would fix it at the price of
+          # main and tag builds never sharing a cache — worse in practice,
+          # since tags are cut from main.
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref=ghcr.io/{0}:buildcache,mode=max', github.repository) || '' }}
 

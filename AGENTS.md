@@ -214,13 +214,14 @@ to the full `owner/repo`, not a bare repo name):
 - **Push a `v*` tag** → build and push `:<tag>`. `flavor: latest=false` is deliberate: a tag build
   never moves `:latest`. No `v*` tag has been pushed yet.
 - **Pull request** → builds `linux/arm64` natively and pushes **nothing**. A pre-merge smoke test
-  that the image still builds; arm64-only so it costs minutes, not the ~15 a QEMU amd64 leg adds.
+  that the image still builds.
 - **`workflow_dispatch`** → manual build on any branch (e.g. to test-deploy one). The `latest`
   step is skipped for any ref that isn't `main`.
 - **Branch pushes** → nothing. Only `ci.yml` runs.
 
-`linux/amd64` is built under QEMU alongside arm64 on every main/tag push, so nothing publishes
-without it; it's a convenience target for x86 hosts, not what the cluster runs.
+Every build is `linux/arm64` only — the cluster's architecture. The former QEMU-built amd64
+convenience target was dropped for build speed; x86 hosts can `docker build` locally, and the
+workflow comment records the native-runner path if publishing amd64 ever returns.
 
 Two universal cautions, whatever the pipeline:
 
