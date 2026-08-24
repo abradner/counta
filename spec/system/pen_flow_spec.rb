@@ -61,7 +61,10 @@ RSpec.describe "Pen setup and dosing", type: :system do
     # Expires end of this month: 37 remaining doses at 7-day spacing can't fit.
     save_pen(expiry: Date.current.strftime("%Y-%m"))
 
-    expect(find("#warnings").text).to include("fit before this pen expires")
+    # "fits" (1 dose) or "fit" (2+): expiry is set to the current month, so
+    # how many doses still fit depends on today's day-of-month — late in the
+    # month the copy pluralises differently than early in it.
+    expect(find("#warnings").text).to match(/fits? before this pen expires/)
   end
 
   it "flags an expired pen" do
