@@ -35,6 +35,15 @@ port ENV.fetch("PORT", 25425)
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 
+# Prometheus metrics. The yabeda plugin reads Puma pool stats through the
+# control app — a unix socket so no extra TCP port is exposed. The
+# yabeda_prometheus plugin serves /metrics from this same process on a
+# separate port (default 9394, override with PROMETHEUS_EXPORTER_PORT) that
+# the ingress never routes — cluster-internal only.
+activate_control_app "unix://#{File.expand_path('../tmp/pumactl.sock', __dir__)}", no_token: true
+plugin :yabeda
+plugin :yabeda_prometheus
+
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.
 pidfile ENV["PIDFILE"] if ENV["PIDFILE"]
