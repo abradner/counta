@@ -11,6 +11,16 @@ gem "puma", ">= 5.0"
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]
 gem "importmap-rails"
 
+# Prometheus metrics: request histograms (yabeda-rails), Puma pool gauges
+# (yabeda-puma-plugin), Ruby GC/heap stats (yabeda-gc — the signal that tells
+# heap growth from native growth when a container's RSS climbs), and a
+# /metrics exporter on a separate in-process port (yabeda-prometheus).
+# See config/puma.rb.
+gem "yabeda-gc"
+gem "yabeda-prometheus"
+gem "yabeda-puma-plugin"
+gem "yabeda-rails"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
 
