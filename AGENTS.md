@@ -233,6 +233,18 @@ Two universal cautions, whatever the pipeline:
   — the same run that moves `:latest`. #51 closed it structurally by adding the `pull_request`
   trigger (§10 meta-rule 5: make it mechanically true rather than warning about it in prose).
   Kept here as the worked example, not as an outstanding gap.
+- **A test job that cannot distinguish "everything passed" from "nothing ran" is not a gate.**
+  When a test runner is swapped, changing the local command is half the job: read what CI actually
+  invokes and confirm the run count it reports is non-zero. (A generated workflow in a sibling
+  repo kept running the abandoned runner against an empty directory — green on every push while
+  executing zero examples, because "no tests found" was a success to it.) Applies equally to any
+  generated pipeline adopted wholesale.
+- **A gate fails only for reasons inside the diff.** Dependency currency belongs to scheduled
+  tooling (dependabot, audit jobs), not to a PR gate — nothing should be able to redden a PR that
+  changed no dependencies, on a schedule set by someone else's release cadence. A gate that cries
+  wolf gets ignored, including on the day it is right. (Instance: a generated scanner wrapper
+  passed `--ensure-latest`, so an upstream release turned every PR in a sibling repo red while
+  reporting a version fact through the channel reserved for security failures.)
 - **A merge is not a release** — this used to read "if images/artifacts build from tags only,
   merged work has no deployable artifact until a tag exists. Not yet applicable — no
   release/artifact flow exists." Now applicable, and this repo is the *opposite* shape, so the
@@ -260,6 +272,16 @@ projects; adjust only with reason, and record the reason (see §10).
 - For anything genuinely ambiguous or not yet decided by the operator, prefer the reversible
   option and leave a clear marker rather than picking silently. Two-way doors over one-way doors.
 
+### Landing changes
+
+- **Every change lands through a pull request** — including one-line copy tweaks. Size is not the
+  criterion. The cost is a minute; the cost of the habit eroding is that "it was only docs" becomes
+  the reason something real lands unreviewed. (Motivating instance: a few commits went straight to
+  `main` during a sibling repo's init. Automated reviewers fire on the ready-for-review edge, so a
+  direct push is a change nothing reviewed, and `main`'s history stops meaning "reviewed states".)
+- Opening a PR is not merging it. Push permission is granted per session — ask once before the
+  first push unless already told.
+
 ### Destructive & outward-facing actions
 
 - Destructive actions (dropping data, deleting files you didn't just create, rewriting published
@@ -276,12 +298,52 @@ projects; adjust only with reason, and record the reason (see §10).
 - Never merge to a shared branch, or rewrite published history, without an explicit, current
   go-ahead. A green build and an auto-mode session default are not that signal — if the work is
   ready, say so and stop.
-- **Work on a branch and open a PR, even for a one-line docs change.** The cost is a minute; the
-  cost of the habit eroding is that "it was only docs" becomes the reason something real lands
-  unreviewed.
+  Every new session starts assuming that manual gate. Two carve-outs are real, and only these:
+  - A **conditional, forward-looking** go-ahead is still a go-ahead: "merge this train once #38 is
+    resolved" names the batch and states the condition, and covers merging while the operator is
+    away. It authorizes *that* batch only.
+  - A **session-scoped carve-out** ("auto-merge only trivial mechanical PRs tonight") is valid when
+    the operator sets it — at session start, as their own policy choice. Treat it as a one-session
+    precedent and ask again next time; anything touching auth, scopes, custody, or an API contract
+    stacks and waits regardless.
+
+  Ambiguous continuations ("continue the stack flow") are **not** authorization — ask briefly,
+  citing this rule so it doesn't read as timidity. And **do not propose loosening this.** The
+  operator's position is that they would like to soften it eventually but that harnesses are not
+  reliable enough yet.
+- **Visibility and content are separate axes.** Before making anything public, do not let a narrow
+  confirmation (repo name, a visibility toggle) stand in for consent to the *content* — git
+  history, comments, and design docs go out too. Separately flag anything describing a
+  still-unfixed vulnerability or written more candidly than the operator likely pictured, and ask
+  about that specifically. (A sibling repo was pushed public with candid commit messages
+  documenting exact vulnerabilities, one of them still live in the code at push time; it had to be
+  flipped back to private immediately.)
 - If you encounter a violation of a safety rule already committed (a plaintext secret, a
   destructive migration lying in wait), flag it immediately — finding it is not the same as
   having caused it, and silence helps nobody.
+
+### Tooling version floors
+
+- **A version floor is an interrupt, not a workaround.** When a skill or workflow depends on
+  tooling at or above some version and the environment is below it, stop and tell the operator
+  what to upgrade. Do not silently take a degraded path, reimplement the missing capability by
+  hand, or work around it — the operator can fix an install in seconds, and the workaround is
+  what ends up load-bearing and unreviewed.
+- Distinguish **fixable** from **unavailable**. A missing or outdated tool is fixable: interrupt.
+  A capability the platform genuinely doesn't offer here — wrong host, feature not enabled for
+  this repo, a documented limit — is unavailable: take the documented fallback and record why.
+- Name the floor and the exact upgrade command when you interrupt. "Your `gh` is too old" costs
+  the operator a search; "`gh extension upgrade stack` — `merge` landed in v0.1.0" does not.
+- The same applies mid-run: if tooling turns out to be below the floor after work has started,
+  stop and say so rather than finishing on the degraded path and reporting success.
+- **Adding a dependency can raise the project's floor without asking.** Package managers resolve a
+  new dep's own requirements by bumping yours. After any dependency add, read the manifest diff for
+  the language/toolchain lines specifically; if a dep forced a bump, pin the *dep* to the newest
+  version whose floor matches the repo rather than raising the repo. A toolchain bump touches the
+  production image and is a deliberate decision, not a side effect of installing something.
+  (Instance: `go get <dep>@latest` rewrote `go.mod`'s Go version and deleted the `toolchain` pin,
+  breaking the Docker build against a pinned base image. The `test` job still passed — only `build`
+  caught it.)
 
 ### Configuration
 
@@ -290,6 +352,9 @@ projects; adjust only with reason, and record the reason (see §10).
   for genuinely optional tuning knobs. (This isn't hypothetical: a sibling repo baked a stand-in
   value into an image-wide ENV to make a build step pass, which would have silently defeated this
   rule in production. If a build step needs a stand-in, scope it to that step, never image-wide.)
+- The same explicitness applies to what the code writes: anything persisted that holds data states
+  its permissions explicitly rather than inheriting the process umask. (Database dumps in a
+  sibling repo landed world-readable because the dump path never asserted a mode.)
 
 ### Review feedback
 
@@ -298,6 +363,13 @@ projects; adjust only with reason, and record the reason (see §10).
   actually reachable. When a finding says code and docs disagree, work out which end is wrong
   before "fixing" either. Declining findings has to actually happen — a round that accepts every
   finding is a warning sign, not a good score.
+- **Verify a delegated claim against the artifact before relaying or acting on it.** Read the
+  diff, grep the branch, run the command — a subagent's report is a claim like any other. (Two
+  agents once filed contradictory security reports and *both were correct about different
+  artifacts*; only diffing them resolved it, and doing so exposed a real defect — a branch that
+  deleted a control introduced by the PR below it, which the final merge accidentally restored.
+  Separately, an agent has returned a placeholder summary while having done complete, correct work:
+  believing the report would have discarded it.)
 - Reject suggestions that violate the rules in this file, and say why. Automated reviewers read
   this file too; that's expected — reviewer-side agents should review fully as normal, and rules
   here that bind only author-side agents say so explicitly.
@@ -309,10 +381,16 @@ projects; adjust only with reason, and record the reason (see §10).
 
 - **Verify the output, not the instrument.** Green means nothing threw, and nothing more. Before
   claiming something works, name the artifact it should have produced and go look at it — the
-  rendered page, the written file, the actual rows.
+  rendered page, the written file, the actual rows. A tool reporting on itself is not the
+  artifact: `git bundle verify` once passed on backup bundles that could not actually be cloned,
+  because the verifier checks internal structure, not that the bundle can reconstitute a repo —
+  the suite that replaced it performs a real clone.
 - **Prove a new test can fail.** For any bug fix: write the regression test, confirm it passes
   with the fix, revert just the fix, confirm the test fails for the right reason, restore the fix.
-  A test that was never seen to fail hasn't proven anything.
+  A test that was never seen to fail hasn't proven anything. This is part of writing the fix, not
+  review debt to defer — one reviewer's "add regression coverage for your own fix" finding recurred
+  three times across a single PR series and was right every time. And the mutated code must
+  *compile*: a build-failed mutant proves nothing.
   - This is the single highest-yield habit in this repo — it has caught a hollow test *five*
     times, and every time the test looked convincing first. Budget for it; it costs a minute.
   - **A revert that doesn't fail doesn't mean the test is good — diagnose which of these it is:**
@@ -328,11 +406,36 @@ projects; adjust only with reason, and record the reason (see §10).
        quiet, and the tuning hides the signal. Look at what a guard *stops* flagging.
     5. **A sequential test can't see a concurrent defect.** Races need real threads on separate
        connections; a single-threaded spec passes regardless (`spec/models/pen_concurrent_write_spec.rb`).
+- **For any isolation or authorization test, name the attacker and write *their* request.** A spec
+  that asserts the mechanism's own definition back at itself cannot fail for any input — it reads
+  like coverage and gates nothing. If you cannot describe an input that would make the assertion
+  fail, the test is documentation, not a gate.
+- **Inference from a plausible nearby cause is not diagnosis.** During a platform outage, a red
+  main was attributed to the outage's known error; the outage was real but unrelated, and the
+  actual job failure had been there all along. Wait for the real signal and read the actual
+  failure before naming a cause.
+- **Watch the setup, not just the assertion.** Four tests in one feature passed against genuinely
+  broken code because their setup could never exercise the branch — an assertion on node count
+  only, a fixed `now` so the fade never completed either way, a payload rejected as malformed
+  before its size mattered. Also beware a test that captures current behavior so faithfully it
+  archives the defect.
 - Ask what else satisfies your assertion — a count-based check that an empty-state row also
   matches, a visibility check that passes for a scrolled-away element. When asserting absence,
   include a positive control so a broken probe can't read as success.
 - Every conditional branch that encodes real logic gets a test that exercises it — especially the
   rare/edge branches, not just the happy path.
+
+### Git hygiene in shared checkouts
+
+- **Create branches only from an explicit start point** (`git checkout -B <name> origin/main`) when
+  anything else might be operating in the same checkout, and check `git branch --show-current`
+  before any operation that depends on HEAD. (A "one-line docs PR" silently inherited five feature
+  commits from an in-repo builder agent's branch and was reviewed in that state. "Only one builder
+  running" is not "only one git user"; prefer worktree isolation for delegated builders.)
+- **Never pair `git stash` with a later `pop` unless the stash verifiably created an entry.** A
+  stash on a clean tree stashes nothing, and the paired pop then pops whatever stranger's entry was
+  on top of a stack you don't control. For "test against a clean copy", use `git show REV:path` or
+  a scratch worktree instead of stashing at all.
 
 ### Layered checks
 
@@ -357,12 +460,36 @@ projects; adjust only with reason, and record the reason (see §10).
   and modifying files during a session. (Scope: this governs session file operations; committed
   shell scripts do what shell scripts do.)
 
-### Multi-PR batches
+### Which shipping flow
 
-- The default flow is one PR at a time: react to feedback immediately, merge when green.
+- The default is one PR at a time: react to feedback immediately, merge when green. Use
+  `.claude/skills/single-pr` — it makes that default rigorous rather than merely simple.
 - Several PRs open together as one body of work is a different regime: use
   `.claude/skills/batch-review` (fan out, feedback write-only until synthesis, one followup PR).
-  It is opt-in for genuine multi-PR fan-outs, not a replacement for the default.
+  It is opt-in for genuine multi-PR fan-outs, not a replacement for the default. The tell is
+  reviewer attention fragmenting across live threads, not the size of the diff.
+- Both skills read `docs/pr-review-machinery.md` for the parts that don't differ between them —
+  reviewer triggers, the three-surface comment harvest, triage, the round cap, and the green-signal
+  traps. It is the canonical copy; don't restate it in a skill, and don't let a skill contradict it.
+- When more than one branch is in flight against the same code — or any branch went through an
+  agent-performed merge or rebase — run `.claude/skills/stack-integration-check` before opening
+  PRs. Per-branch review is structurally blind to what happens between branches; this is the check
+  that runs on the combination.
+
+### Context & compaction
+
+- When the operator signals they are near the context limit and about to compact, use
+  `.claude/skills/park-context` rather than improvising a summary. Compaction keeps a paraphrase
+  and discards the transcript, so the park writes only what compaction destroys — intent, rejected
+  alternatives, what was actually verified versus assumed, what was mid-flight when the turn was
+  cut — and never the diff, which is reconstructible.
+- Do not finish work, commit, or push while parking. Parking is triggered by interrupting a live
+  turn, so the tree may hold a partial edit nobody intended; record it as observed and stop.
+- Resuming from a handoff uses `.claude/skills/resume-context`. The handoff is a claim, not a
+  verdict (see Review feedback above) — the session that wrote it is gone and cannot be asked what
+  it meant. Verify its state claims against the repo and report drift before building on them.
+- Durable lessons never live in a handoff. They land in §9 / §6.1, or in the external tracker,
+  before the work merges — handoff files are gitignored local state and get deleted.
 
 ## 9. Gotchas & Lessons Learned
 
@@ -507,6 +634,33 @@ Initialized 2026-08-03, from an operator interview (see PR/commit that introduce
   lives in the private `abradner/fleet` registry instead (row added/updated at init time:
   relationship "fresh init from keel", synced through `abd4b246569d96ee37f3b9ec48490a4816670295`,
   checked 2026-08-03).
+
+### Sync to keel `8ffb118e` (2026-08-31)
+
+Brought this repo up to the template's current head after four generations of drift. Taken:
+`single-pr`, `park-context`/`resume-context`, `stack-integration-check`, and
+`docs/pr-review-machinery.md` (new files); the stacked-PR-GA rewrite of `batch-review`; the
+clean-worktree guard in `independent-commit-review`; §8's landing-changes, tooling-floor,
+git-hygiene, shipping-flow and context/compaction rules; the merge-gate carve-outs; and the
+`.claude/handoffs/` gitignore entry that `park-context` depends on.
+
+Adapted rather than copied, in both directions:
+
+- **§8's testing rules were merged, not replaced.** This repo's five-case "a revert that doesn't
+  fail doesn't mean the test is good" diagnosis is local work with no template equivalent and is
+  kept in full; the template's newer bullets (name-the-attacker, inference-is-not-diagnosis,
+  watch-the-setup, mutants-must-compile) were added around it. The five-case block is flagged
+  upstream as a backport candidate.
+- **The bot roster now says what is true.** §8 and the batch-review roster named Claude as a
+  reviewer; it has never posted a review on this repo. Verified against this repo's own PR history
+  — Copilot and Codex both real, Claude removed rather than left as an unfalsifiable claim
+  (meta-rule 1). The batch-review validation line was likewise stale ("no app code or CI exists
+  yet, greenfield") and now describes the real gate.
+- **`docs/rails-prometheus-metrics.md` deliberately not taken.** The template wrote that recipe up
+  *from* this repo's own metrics work (and its three Rails siblings); importing it back would add a
+  second description of a boundary this repo already implements, free to drift from the code.
+- **No Template lineage block**, unchanged: this repo is public, and the pointer to a private
+  template stays in the fleet registry only. The registry row is the sync record.
 
 ## Caveman Mode
 

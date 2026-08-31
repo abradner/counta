@@ -49,5 +49,7 @@ than as a reset at the end — but when the reset is needed, this is how to do i
    amended commits toward the final intended state.
 
 7. **Verify clean, then swap.** Full test suite from a clean state (fresh DB/services if the
-   suite uses them). Then point the real branch at the rebuilt history (`git reset --hard` onto
-   it), keeping the snapshot branch from step 1 forever.
+   suite uses them). Then confirm the worktree itself is clean — `git status --short` must be
+   empty, and abort if it is not: the snapshot branch preserves commits, not uncommitted edits,
+   and the swap's `git reset --hard` destroys those silently. Only then point the real branch at
+   the rebuilt history, keeping the snapshot branch from step 1 forever.
