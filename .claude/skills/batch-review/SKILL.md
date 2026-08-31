@@ -34,12 +34,10 @@ when green) remains correct for one PR at a time; this skill exists for the mult
   Chromium via Cuprite — see `AGENTS.md` §6.1.3), and `mise exec -- bundle exec rubocop` before
   pushing. Postgres comes from `docker compose up -d db`. CI additionally runs Brakeman and
   bundler-audit in a separate `lint` job (`AGENTS.md` §7).
-- **Bot roster**: **Copilot** and **Codex** are both installed and have both reviewed here —
-  verified against this repo's own PR history, not assumed. Copilot auto-reviews on the
-  ready-for-review edge and is cheap; budget Codex to 2–3 invocations per batch and spend them on
-  aggregate diffs. **Claude is not an installed reviewer on this repo** — it has never posted a
-  review here, so do not count it as a second pass. (`AGENTS.md` §8 and §11 named it for a while;
-  that claim was corrected, per maintenance meta-rule 1.)
+- **Bot roster**: the live roster, triggers and verification rules are `docs/pr-review-machinery.md`
+  §1 — verified against this repo's own PR history, and canonical. Batch-specific here: Copilot is
+  cheap, so let it fire on every interstitial; budget Codex to 2–3 invocations per batch and spend
+  them on aggregate diffs rather than single interstitials.
 - **Merge strategy**: squash-merge, for interstitials and the followup alike — so one
   `merge_method` covers the whole train and Phase 7 needs only a single checkout-then-merge
   cycle. The strategy-dependent rules below have been resolved to squash; the merge-commit

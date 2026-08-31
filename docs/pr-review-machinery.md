@@ -17,13 +17,13 @@ Read this once per session, not once per PR.
 Reviewers are not interchangeable and most do **not** fire on their own. Establish for each one
 *what triggers it* and *what it is good for* before you need it.
 
-> **The table below is the fleet's default roster, not this repo's — verify it before relying on
-> it, and correct it at init.** A repo's steering doc once named a reviewer whose app had never
-> been installed; PRs satisfied the letter of the rule while getting one bot pass instead of two,
-> and nobody noticed for weeks. Confirm each bot has actually commented in *this* repo
-> before counting it as a review surface, and check **all three surfaces** from §2 — a bot that only
-> leaves inline or issue comments never appears in `pulls/<n>/reviews`, so a reviews-only check can
-> report a reviewer as absent when it is working, or as present when it has only ever errored:
+> **This roster was verified against this repo's own PR history on 2026-08-31** — not inherited
+> from the fleet default. A repo's steering doc once named a reviewer whose app had never been
+> installed; PRs satisfied the letter of the rule while getting one bot pass instead of two, and
+> nobody noticed for weeks. Re-verify whenever a reviewer is added or removed, and check **all
+> three surfaces** from §2 — a bot that only leaves inline or issue comments never appears in
+> `pulls/<n>/reviews`, so a reviews-only check can report a reviewer as absent when it is working,
+> or as present when it has only ever errored:
 >
 > ```bash
 > for n in <recent PR numbers>; do
@@ -32,13 +32,12 @@ Reviewers are not interchangeable and most do **not** fire on their own. Establi
 >   gh api repos/{owner}/{repo}/issues/$n/comments --jq '.[].user.login'
 > done | sort -u
 > ```
->
-> Delete rows for reviewers this repo doesn't have.
 
 | Reviewer | Trigger | Cost | Notes |
 |---|---|---|---|
-| **Copilot** | Balanced review automatically on every PR **created or promoted to ready**. Never on push. | Cheap — unrationed | A followup push needs an explicit re-request through the GitHub PR review mechanism, or you are reading a verdict on superseded code. |
-| **Codex** | **Repo-configurable** — may auto-review on PR-open and draft→ready, or may review only when asked via a `@codex <prompt>` comment. Check its own "About Codex in GitHub" box on any past review, which states the repo's actual triggers. | Expensive — budget it | If auto-review is off, its absence is silent: nobody asks, it never reviews, and nothing looks wrong. Spend it on the largest coherent diff available; it takes a prompt, so aim it. |
+| **Copilot** | Balanced review automatically when a PR is **opened ready for review, or flipped draft→ready**. Never on a draft, and never on push. | Cheap — unrationed | A followup push needs an explicit re-request through the GitHub PR review mechanism, or you are reading a verdict on superseded code. |
+| **Codex** | Verified present on this repo. Reviews on an explicit `@codex <prompt>` comment; it has also auto-reviewed here. Check its own "About Codex in GitHub" box on a recent review for the current triggers. | Expensive — budget 2–3 per batch | If auto-review is off its absence is silent: nobody asks, it never reviews, and nothing looks wrong. Spend it on the largest coherent diff; it takes a prompt, so aim it. |
+| ~~Claude~~ | **Not installed on this repo.** It was named in the steering docs for a while and has never posted a review here; the claim was removed rather than left unfalsifiable. | — | Do not count it as a second pass. In-session self-review is not an independent review. |
 
 Re-requesting Copilot through the API needs the literal `[bot]` suffix on the login:
 
