@@ -9,6 +9,10 @@ tmp/
 # Local agent config (per-machine permissions — never shared)
 .claude/settings.local.json
 
+# Session context handoffs (park-context skill) — local working state, and they
+# can carry session detail that shouldn't land in this repo's history
+.claude/handoffs/
+
 # Env files — commit templates (.env.template*), never real values
 .env
 .env.*
