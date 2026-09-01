@@ -239,12 +239,19 @@ Two universal cautions, whatever the pipeline:
   repo kept running the abandoned runner against an empty directory — green on every push while
   executing zero examples, because "no tests found" was a success to it.) Applies equally to any
   generated pipeline adopted wholesale.
-- **A gate fails only for reasons inside the diff.** Dependency currency belongs to scheduled
-  tooling (dependabot, audit jobs), not to a PR gate — nothing should be able to redden a PR that
-  changed no dependencies, on a schedule set by someone else's release cadence. A gate that cries
-  wolf gets ignored, including on the day it is right. (Instance: a generated scanner wrapper
-  passed `--ensure-latest`, so an upstream release turned every PR in a sibling repo red while
-  reporting a version fact through the channel reserved for security failures.)
+- **A PR gate fails only for reasons inside the diff — with one carve-out, named here so it does
+  not get removed by someone applying this rule literally.** Dependency *currency* belongs to
+  scheduled tooling (dependabot, staleness checks), not a PR gate: nothing should redden a PR that
+  changed no dependencies merely because someone else shipped a release. A gate that cries wolf
+  gets ignored, including on the day it is right. (Instance: a generated scanner wrapper passed
+  `--ensure-latest`, so an upstream release turned every PR in a sibling repo red while reporting a
+  version fact through the channel reserved for security failures.)
+  - **A vulnerability disclosure is not staleness.** A scanner that fails because a *newly
+    disclosed CVE* affects an already-pinned dependency stays a PR gate on purpose: merging a
+    known-vulnerable dependency is unsafe whether or not this diff introduced it. This repo's
+    `bundle-audit` step in the `lint` job (§7) is exactly that gate — leave it on PRs. The test is
+    "is there a known defect in what we ship" (gate it) versus "is there a newer version"
+    (schedule it).
 - **A merge is not a release** — this used to read "if images/artifacts build from tags only,
   merged work has no deployable artifact until a tag exists. Not yet applicable — no
   release/artifact flow exists." Now applicable, and this repo is the *opposite* shape, so the
