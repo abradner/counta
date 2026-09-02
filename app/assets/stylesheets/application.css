@@ -147,6 +147,13 @@ dialog p{margin:0 0 14px;font-size:15px}
 .confirm-sub{text-align:center;color:var(--ink-soft);font-weight:600;margin-bottom:14px}
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 footer{margin-top:6px;font-size:12px;color:var(--ink-soft);text-align:center}
+/* Site-wide attribution (README/GitHub, alexbradner.com) — rendered once,
+ * outside the hidden screen sections, so it's visible whichever screen is
+ * showing. Muted like the rest of the footer, not brand-colored, so it
+ * reads as quiet credit rather than a call to action. */
+footer.attribution{margin-top:18px}
+footer.attribution a{color:var(--ink-soft)}
+footer.attribution a:hover,footer.attribution a:focus-visible{color:var(--brand)}
 code{font-family:ui-monospace,monospace;font-size:13px;background:#f2f4f7;border-radius:6px;padding:2px 6px;
      overflow-wrap:anywhere}
 /* recovery kit ceremony */

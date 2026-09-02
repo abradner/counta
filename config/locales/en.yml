@@ -152,6 +152,11 @@ en:
     footer:
       privacy: Your pen and dose data is end-to-end encrypted — counta.click can’t read it.
       disclaimer: counta helps you count clicks; it isn’t medical advice.
+      attribution_html: >-
+        Made by <a href="https://alexbradner.com" target="_blank"
+        rel="noopener noreferrer">Alex Bradner</a> · <a
+        href="https://github.com/abradner/counta" target="_blank"
+        rel="noopener noreferrer">counta source on GitHub</a>.
 
     disclaimer:
       title: Before you start
