@@ -98,9 +98,12 @@ Then report readiness and **stop**. Readiness is not authorization.
 The gate is `AGENTS.md` §8: a live operator go-ahead, with every new session resetting to the manual
 gate. A green build, a clean review, and an auto-mode session default are none of them that signal.
 
-On the go-ahead: merge per the repo's stated strategy, delete the branch **only** if nothing is
-based on it, and confirm the merge actually landed rather than trusting the command's return. Then
-restart the working branch from fresh main — never stack new commits on pre-merge history:
+On the go-ahead, **first re-run the merge check in `docs/pr-review-machinery.md` §6**: the head you
+are merging may not be the head that was reviewed, because anything pushed since Phase 5 — a late
+fix, or one made after the go-ahead arrived — moved the branch past what that check saw. Then merge per the repo's stated strategy, delete the branch **only** if
+nothing is based on it, and confirm the merge actually landed rather than trusting the command's
+return. Finally, restart the working branch from fresh main — never stack new commits on pre-merge
+history:
 
 ```bash
 git fetch origin main && git checkout -B <branch> origin/main

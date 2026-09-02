@@ -17,8 +17,8 @@ Read this once per session, not once per PR.
 Reviewers are not interchangeable and most do **not** fire on their own. Establish for each one
 *what triggers it* and *what it is good for* before you need it.
 
-> **This roster was verified against this repo's own PR history on 2026-08-31** — not inherited
-> from the fleet default. A repo's steering doc once named a reviewer whose app had never been
+> **This roster was verified against this repo's own PR history on 2026-09-02** — not inherited
+> from the template's default. A repo's steering doc once named a reviewer whose app had never been
 > installed; PRs satisfied the letter of the rule while getting one bot pass instead of two, and
 > nobody noticed for weeks. Re-verify whenever a reviewer is added or removed, and check **all
 > three surfaces** from §2 — a bot that only leaves inline or issue comments never appears in
@@ -36,7 +36,7 @@ Reviewers are not interchangeable and most do **not** fire on their own. Establi
 | Reviewer | Trigger | Cost | Notes |
 |---|---|---|---|
 | **Copilot** | Balanced review automatically when a PR is **opened ready for review, or flipped draft→ready**. Never on a draft, and never on push. | Cheap — unrationed | A followup push needs an explicit re-request through the GitHub PR review mechanism, or you are reading a verdict on superseded code. |
-| **Codex** | Verified present on this repo. Reviews on an explicit `@codex <prompt>` comment; it has also auto-reviewed here. Check its own "About Codex in GitHub" box on a recent review for the current triggers. | Expensive — budget 2–3 per batch | If auto-review is off its absence is silent: nobody asks, it never reviews, and nothing looks wrong. Spend it on the largest coherent diff; it takes a prompt, so aim it. |
+| **Codex** | Verified present on this repo. Reviews on an explicit `@codex <prompt>` comment — every one of its 8 reviews (6 PRs, latest #55) followed such a comment by ~5 minutes; no unprompted review observed as of 2026-09-02. Check its own "About Codex in GitHub" box on a recent review for the current triggers. | Expensive — budget 2–3 per batch | If auto-review is off its absence is silent: nobody asks, it never reviews, and nothing looks wrong. Spend it on the largest coherent diff; it takes a prompt, so aim it. |
 | ~~Claude~~ | **Not installed on this repo.** It was named in the steering docs for a while and has never posted a review here; the claim was removed rather than left unfalsifiable. | — | Do not count it as a second pass. In-session self-review is not an independent review. |
 
 Re-requesting Copilot through the API needs the literal `[bot]` suffix on the login:
@@ -114,8 +114,24 @@ Two more harvest traps:
 ## 3. Triage by verifying
 
 A finding is a claim, not a verdict — whether it came from a bot, a human, or your own earlier
-session. Trace or reproduce it before acting. Ask whether the flagged path is actually reachable.
-When a finding says code and docs disagree, work out which end is wrong before "fixing" either.
+session. Trace or reproduce it before acting.
+
+Four questions that decide most findings, each of which has changed a real verdict:
+
+- **Is the flagged path reachable?** A finding can be correct about the external world and still
+  irrelevant, because this codebase cannot produce the input it describes. Guarding an unreachable
+  path costs maintenance and buys nothing. (A reviewer correctly noted a CLI rejects unknown
+  categories; the category the client sends is a constant in its own template map. Declined.)
+- **Which end is wrong?** When a comment reports code and documentation disagreeing, the
+  documentation is often the side to fix. (A reviewer flagged a fake's error string as not matching
+  the notes. The fake was right; the notes had dropped a prefix.)
+- **What does the finding actually support?** A comment can be right that wording is misleading
+  without being right that the underlying rule is wrong. Fix the wording, not the rule. (A reviewer
+  read an invariant as condemning two existing inputs. The invariant was right; its phrasing
+  invited an unnecessary refactor.)
+- **What context did the reviewer have?** A bot reviewing one PR cannot see a decision made three
+  PRs earlier. Severity badges and assertive phrasing do not encode that missing context — weigh
+  the finding against what the reviewer could see.
 
 Sort each into: **fix now** / **defer to the tracker** / **decline with a stated reason**.
 
@@ -167,6 +183,7 @@ Every one of these has produced a false clear for real:
 | New test passing on first run | May be passing against unfixed code | Revert-and-confirm: watch it fail without the fix |
 | Green CI run | Path filtering may have skipped the half of the suite your change lives in | Check **which jobs actually ran**, not the rollup colour |
 | A merge command that returned | Stacked merges are asynchronous; rules are evaluated when the merge runs | Poll to a terminal status; `enqueued` is not `merged` |
+| A delivered review, after a late fix | The review is real, but describes an earlier commit — "reviewed and approved" quietly becomes "approved something else" | Require *some* successfully-delivered review whose `commit_id` equals the current head SHA (§6) |
 
 Two related habits:
 
@@ -177,9 +194,92 @@ Two related habits:
 
 ## 6. Merging
 
-The merge gate lives in `AGENTS.md` §8 — **read it there before merging anything.** `AGENTS.md` is
-canonical for it, exactly as this file is canonical for the mechanics above. The one-line orientation
-is that the baseline is a live operator go-ahead and that agents must not propose loosening it; every
+**Before merging, confirm the head you are merging is the head that was reviewed.** A go-ahead is
+given at a moment; any fix after it moves the branch past what anyone looked at.
+
+The criterion is not "the latest review looks recent" — review ordering is not reliable, and a
+*failed* bot run also lands as a `COMMENTED` review carrying the current head's `commit_id` (§2).
+Matching on SHA alone would therefore clear precisely the unreviewed merge this check exists to
+catch. Require **at least one successfully-delivered review whose `commit_id` equals the current
+head SHA**, after applying §2's failure and bookkeeping filters:
+
+```bash
+HEAD_SHA=$(gh pr view <n> --json headRefOid --jq '.headRefOid') \
+gh api --paginate repos/{owner}/{repo}/pulls/<n>/reviews \
+  --jq '.[] | select(.commit_id == $ENV.HEAD_SHA)
+       | select(.state != "COMMENTED" or (.body|length) > 0)
+       | select(.body | test("unable to review|encountered an error") | not)
+       | "\((.user.login // "unknown")) \(.state) bodylen=\(.body|length)"'
+```
+
+**A review record is evidence, not proof — the output still has to be read.** Two artifact classes
+masquerade as reviews and both are filtered above, but neither filter is airtight:
+
+- *Bookkeeping* — empty-bodied `COMMENTED` records the agent's own thread replies create (below).
+- *Failed runs* — a bot that errored posts a short `COMMENTED` body saying so, at the current head.
+  Caught here by matching its message text, which is brittle: the wording is the vendor's to change.
+  The durable corroboration is **zero inline comments at that commit** (§2), so when a row looks
+  thin, check the inline count before counting it.
+
+This exact case is why the filter exists rather than being a footnote: while this check was being
+written, Copilot errored on the very PR that adds it, and the 117-byte "encountered an error"
+notice sailed through an earlier version of the filter as a delivered review.
+
+**Your own thread replies land in this list.** Every `gh api .../comments/<id>/replies` call creates
+an empty-bodied `COMMENTED` **review** record under the operator's account, stamped at the current
+head. An agent that has just replied to and resolved a round of feedback will therefore find its own
+footprints sitting exactly where a review should be, and read them as one. (Measured on this
+template's own PR: seven replies produced seven such records, timestamps matching to the second.)
+The filter above drops them by their exact signature — `COMMENTED` *and* empty — rather than by
+emptiness alone. That distinction matters: GitHub permits an `APPROVED` review with no body, so
+filtering on emptiness alone would discard a genuine current-head approval and report an approved
+head as unreviewed.
+
+Two limits worth knowing before you rely on the result:
+
+- A reviewer who left **only inline comments** and no summary is dropped by the filter — and
+  **inline comments cannot rescue the check.** §2 establishes that an unresolved comment's
+  `commit_id` is rewritten to the current head while `original_commit_id` keeps the truth, so
+  "inline comments exist at the head" is not evidence the head was reviewed. It is the *same* false
+  clear this gate exists to prevent, re-entered through the back door. (Measured on this template's
+  PR #5: seven comments report a `commit_id` they were never written against — one written against
+  `d0e8ade` now reports `db8c586`.) Either bind each comment back through `pull_request_review_id`
+  and validate *that review record's* commit, or — simpler, and the better default — treat the empty
+  result as **"review of this head could not be established"** and disclose it. Never upgrade an
+  absence into a pass.
+- A reviewer that only ever posts **issue comments** — §1 notes these exist, and they never create
+  review records at all — cannot satisfy this gate in either direction, because an issue comment
+  carries no commit binding. If a repo's roster is issue-comment-only, this check cannot be made to
+  pass mechanically: say so to the operator and let the merge decision rest on an explicit
+  disclosure, rather than reading the permanent empty result as either a pass or a failure.
+
+Three details that each cost a wrong answer if dropped. **`--paginate`** — reviews are paged at 30,
+so without it a matching review on a later page reads as empty, and this check's empty output means
+"unreviewed". **The environment variable** — `gh api --jq` takes only a filter and rejects jq's
+`--arg` with "accepts 1 arg(s)" (piping to a standalone `jq -r --arg h "$HEAD_SHA"` works instead,
+where `jq` is installed). **The `// "unknown"` fallback** — `.user.login` is null for a deleted
+account, which otherwise errors the whole filter and takes the check down with it.
+
+Empty output means **review of this head could not be established** — not that it was definitely
+never reviewed; §1's issue-comment-only reviewers and inline-only reviews both produce an empty
+result while a review exists. Report the limit, not a stronger claim than the evidence carries.
+Output alone is not sufficient either: check each row is a real
+review rather than an error notice (§2 — a failed run says it could not review and carries zero
+inline comments) or an agent bookkeeping reply. If nothing valid matches, either solicit a review of
+the current head or **tell the operator plainly that the delta is unreviewed** — the authorization
+may well still stand, but it should be given in view of that, not around it.
+
+Evidence, from the template's own history
+(its PR #5 — the number is the template's, not this repo's, because a bare "#5" resolves to an
+unrelated PR in every downstream repo): the operator's go-ahead was followed by three further
+commits of fixes, and the commit that actually merged had been reviewed by neither bot. The merge
+was authorized and the delta was deletions-only, so the outcome was fine — but the report implied a
+review that had not happened, and the only reason anyone noticed was a background job that had
+already been written off as superseded.
+
+The merge gate itself lives in `AGENTS.md` §8 — **read it there before merging anything.** That file
+is canonical for the gate, exactly as this one is canonical for the mechanics above. The one-line
+orientation is that the baseline is a live operator go-ahead and that agents must not propose loosening it; every
 qualification on that — what a conditional grant is, what a session carve-out covers, what does not
 count — is in §8 and is deliberately not duplicated here.
 
@@ -205,6 +305,6 @@ Small, recurring, and each one wastes a round when it bites:
 
 **Maintenance note.** This file is the canonical copy. The account-wide standalone
 `~/.claude/skills/batch-review/SKILL.md` deliberately carries its own self-contained duplicate,
-because it runs in repos that have no keel `AGENTS.md` and no `docs/` — it is regenerated from
-keel's `batch-review`, so changes here reach it by regeneration, not by reference. That copy is
+because it runs in repos that have no template `AGENTS.md` and no `docs/` — it is regenerated from
+the template's `batch-review`, so changes here reach it by regeneration, not by reference. That copy is
 expected to lag; check it when this file changes materially.
