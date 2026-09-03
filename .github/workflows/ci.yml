@@ -5,6 +5,17 @@ on:
   push:
     branches: [ main ]
 
+# Supersede in-flight runs on the same ref, same pattern as docker.yml's own
+# concurrency block: a run superseded by a fresh push tells us nothing nobody
+# already gets from the newer commit's own run, and letting it finish anyway
+# just bills full CI minutes for a result nobody reads. Found via an August
+# cost audit: counta was the one CI workflow in the estate missing this,
+# while its sibling repos already had it -- some superseded runs here ran to
+# completion uncancelled because there was nothing to cancel them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # arm64-native runners for both jobs: the athena cluster (deploy target)
   # is all arm64, so testing on the deploy architecture means a CI-only
