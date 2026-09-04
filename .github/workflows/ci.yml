@@ -32,11 +32,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
 
-      # Both jobs share this cache: install path is pinned to vendor/bundle
-      # (not mise's default gem path) specifically so lint and rspec produce
-      # identical, cacheable content from the same Gemfile.lock -- one job's
-      # cache write benefits the other. Found via an August cost audit: a
-      # cold `bundle install` occasionally stalls on rubygems.org for 45-60
+      # Both jobs share this cache key: install path is pinned to
+      # vendor/bundle (not mise's default gem path) so lint and rspec
+      # produce identical, cacheable content from the same Gemfile.lock.
+      # The benefit is cross-RUN, not cross-job -- actions/cache saves at
+      # job end, and lint/rspec run in parallel with no `needs:` between
+      # them, so neither can restore what the other wrote in the same run.
+      # Once either job has saved a cache, every subsequent run's lint AND
+      # rspec restore it. Found via an August cost audit: a cold
+      # `bundle install` occasionally stalls on rubygems.org for 45-60
       # minutes (two real runs did, both against this exact step) with
       # nothing here to time it out. Caching means most runs skip the
       # network fetch entirely; timeout-minutes below bounds the ones that
