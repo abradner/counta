@@ -35,16 +35,23 @@ jobs:
       # Both jobs share this cache key: install path is pinned to
       # vendor/bundle (not mise's default gem path) so lint and rspec
       # produce identical, cacheable content from the same Gemfile.lock.
-      # The benefit is cross-RUN, not cross-job -- actions/cache saves at
-      # job end, and lint/rspec run in parallel with no `needs:` between
-      # them, so neither can restore what the other wrote in the same run.
-      # Once either job has saved a cache, every subsequent run's lint AND
-      # rspec restore it. Found via an August cost audit: a cold
-      # `bundle install` occasionally stalls on rubygems.org for 45-60
-      # minutes (two real runs did, both against this exact step) with
-      # nothing here to time it out. Caching means most runs skip the
-      # network fetch entirely; timeout-minutes below bounds the ones that
-      # can't, instead of letting a stall run to an hour like it did before.
+      #
+      # Scope, precisely (GitHub caches are branch-scoped, not global):
+      # actions/cache saves at job end, and lint/rspec run in parallel with
+      # no `needs:` between them, so neither restores what the other wrote
+      # in the *same* run. A cache is visible to later runs on the *same*
+      # branch, and to any branch falling back to the *default* branch's
+      # cache -- it does NOT carry from a PR branch to the first post-merge
+      # run on `main`, or to any other PR, until `main` has saved its own
+      # entry for the key. So: every commit after the first on one PR
+      # benefits; the first run on a new PR or the first post-merge run on
+      # `main` still pays a cold install, until `main` has its own cache.
+      #
+      # Found via an August cost audit: a cold `bundle install` occasionally
+      # stalls on rubygems.org for 45-60 minutes (two real runs did, both
+      # against this exact step) with nothing here to time it out. Caching
+      # narrows the exposure to those still-cold cases rather than removing
+      # it; timeout-minutes below bounds what a stall costs when it happens.
       - name: Cache gems
         uses: actions/cache@v4
         with:
