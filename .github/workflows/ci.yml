@@ -27,10 +27,30 @@ jobs:
   # mistaken for a broken test run, and vice versa.
   lint:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
-      - run: mise exec -- bundle install --jobs 4
+
+      # Both jobs share this cache: install path is pinned to vendor/bundle
+      # (not mise's default gem path) specifically so lint and rspec produce
+      # identical, cacheable content from the same Gemfile.lock -- one job's
+      # cache write benefits the other. Found via an August cost audit: a
+      # cold `bundle install` occasionally stalls on rubygems.org for 45-60
+      # minutes (two real runs did, both against this exact step) with
+      # nothing here to time it out. Caching means most runs skip the
+      # network fetch entirely; timeout-minutes below bounds the ones that
+      # can't, instead of letting a stall run to an hour like it did before.
+      - name: Cache gems
+        uses: actions/cache@v4
+        with:
+          path: vendor/bundle
+          key: bundle-${{ runner.os }}-${{ hashFiles('Gemfile.lock') }}
+
+      - name: Bundle
+        run: |
+          mise exec -- bundle config set path vendor/bundle
+          mise exec -- bundle install --jobs 4
       - name: Rubocop
         run: mise exec -- bundle exec rubocop
       - name: Brakeman
@@ -42,6 +62,7 @@ jobs:
 
   rspec:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
 
     services:
       db:
@@ -65,6 +86,13 @@ jobs:
 
       - name: Install Chromium for system specs
         run: sudo apt-get update && sudo apt-get install -y chromium-browser
+
+      # See the matching step in the lint job for why this exists.
+      - name: Cache gems
+        uses: actions/cache@v4
+        with:
+          path: vendor/bundle
+          key: bundle-${{ runner.os }}-${{ hashFiles('Gemfile.lock') }}
 
       - name: Bundle
         run: |
