@@ -5,6 +5,17 @@ on:
   push:
     branches: [ main ]
 
+# Supersede in-flight runs on the same ref, same pattern as docker.yml's own
+# concurrency block: a run superseded by a fresh push tells us nothing nobody
+# already gets from the newer commit's own run, and letting it finish anyway
+# just bills full CI minutes for a result nobody reads. Found via an August
+# cost audit: counta was the one CI workflow in the estate missing this,
+# while its sibling repos already had it -- some superseded runs here ran to
+# completion uncancelled because there was nothing to cancel them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # arm64-native runners for both jobs: the athena cluster (deploy target)
   # is all arm64, so testing on the deploy architecture means a CI-only
@@ -16,10 +27,41 @@ jobs:
   # mistaken for a broken test run, and vice versa.
   lint:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
-      - run: mise exec -- bundle install --jobs 4
+
+      # Both jobs share this cache key: install path is pinned to
+      # vendor/bundle (not mise's default gem path) so lint and rspec
+      # produce identical, cacheable content from the same Gemfile.lock.
+      #
+      # Scope, precisely (GitHub caches are branch-scoped, not global):
+      # actions/cache saves at job end, and lint/rspec run in parallel with
+      # no `needs:` between them, so neither restores what the other wrote
+      # in the *same* run. A cache is visible to later runs on the *same*
+      # branch, and to any branch falling back to the *default* branch's
+      # cache -- it does NOT carry from a PR branch to the first post-merge
+      # run on `main`, or to any other PR, until `main` has saved its own
+      # entry for the key. So: every commit after the first on one PR
+      # benefits; the first run on a new PR or the first post-merge run on
+      # `main` still pays a cold install, until `main` has its own cache.
+      #
+      # Found via an August cost audit: a cold `bundle install` occasionally
+      # stalls on rubygems.org for 45-60 minutes (two real runs did, both
+      # against this exact step) with nothing here to time it out. Caching
+      # narrows the exposure to those still-cold cases rather than removing
+      # it; timeout-minutes below bounds what a stall costs when it happens.
+      - name: Cache gems
+        uses: actions/cache@v4
+        with:
+          path: vendor/bundle
+          key: bundle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-${{ hashFiles('Gemfile.lock') }}
+
+      - name: Bundle
+        run: |
+          mise exec -- bundle config set path vendor/bundle
+          mise exec -- bundle install --jobs 4
       - name: Rubocop
         run: mise exec -- bundle exec rubocop
       - name: Brakeman
@@ -31,6 +73,7 @@ jobs:
 
   rspec:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
 
     services:
       db:
@@ -54,6 +97,13 @@ jobs:
 
       - name: Install Chromium for system specs
         run: sudo apt-get update && sudo apt-get install -y chromium-browser
+
+      # See the matching step in the lint job for why this exists.
+      - name: Cache gems
+        uses: actions/cache@v4
+        with:
+          path: vendor/bundle
+          key: bundle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-${{ hashFiles('Gemfile.lock') }}
 
       - name: Bundle
         run: |
