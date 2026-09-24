@@ -380,9 +380,14 @@ projects; adjust only with reason, and record the reason (see §10).
 - Reject suggestions that violate the rules in this file, and say why. Automated reviewers read
   this file too; that's expected — reviewer-side agents should review fully as normal, and rules
   here that bind only author-side agents say so explicitly.
-- **Bot roster:** Copilot auto-reviews every PR (cheap, unrationed). Codex/Claude review by
-  request — expected to actually be requested on any non-trivial PR that won't otherwise get
-  substantial human review before merge.
+- **Bot roster:** Copilot auto-reviews every PR (cheap, unrationed). Codex reviews by request, and
+  should actually be requested on any non-trivial PR that won't otherwise get substantial human
+  review before merge. The live roster and its triggers are in `docs/pr-review-machinery.md`.
+  (This line used to say "Codex/Claude review by request". No Claude reviewer is installed on
+  this repo, and none has ever posted a review here, including on PRs where `@claude review` was
+  posted. #62 corrected the roster doc but left this copy behind. Don't count an in-session
+  self-review as the second pass: #55's two review rounds found four real defects, and the
+  author's own verification found none of them.)
 
 ### Testing & verification
 
@@ -577,6 +582,33 @@ test lives** (if one exists).
     trusting the spec → `spec/system/pen_flow_spec.rb`, `spec/system/sync_conflict_spec.rb`,
     `spec/i18n_spec.rb`.
 
+11. The ladder-aware calendar export (#45) passed its whole suite and still put three junk events
+    on today's date in Calendar.app → it sent a `STATUS:CANCELLED` tombstone for every step slot
+    the plan *could* name, and a cancellation only retires a UID the client already holds; for one
+    it has never seen, the client creates a placeholder. Because the set was a high-water mark,
+    every later export would have sent them again → **cancel only what you actually published,
+    and only once**: record the identifiers the last export left live, and emit the difference.
+    More generally, **a claim about how a third-party client handles our output is a hypothesis
+    until someone has seen it in that client**, because specs can only check what counta emits.
+    The same branch also dropped `RRULE` from one-dose events on the unverified claim that
+    `COUNT=1` "draws as a recurrence in some clients". That quietly broke the unplanned path's
+    byte-identity with what it emitted before, and the change was reverted rather than kept on
+    faith. Real-client verification of the rest is #66 → `spec/system/dose_plan_spec.rb` (a first
+    export carries no `STATUS:CANCELLED`, and neither does a re-export after a cancellation).
+
+12. The same export computed its series, awaited `persistPen` (whose 409 path adopts the other
+    device's plan and doses), and published afterwards. A stale tab could therefore publish its
+    cached ladder under a *higher* `SEQUENCE` and overwrite the other device's correct schedule.
+    The code it replaced was correct only by accident: it happened to call `remainingDoses()`
+    after the `await` → moving a derivation across an `await` that can rewrite its inputs changes
+    behaviour, even when the diff looks like a reorder → **derive anything that a conflict merge
+    can rewrite after the write returns, or re-derive it when the merge changed its inputs**. When
+    correctness depends on reading after an `await`, say so in a comment, because nothing else
+    will stop the next refactor from hoisting it. Codex review found this; the author's
+    revert-and-watch-it-fail loop did not → `spec/system/dose_plan_spec.rb` ("publishes the merged
+    plan, not the ladder this tab had cached" drives a real 409 through `writeRow` and asserts on
+    the dose amount).
+
 ## 10. Maintaining This Document
 
 Meta-rules for editing this file — they exist because each was violated somewhere first:
@@ -622,7 +654,9 @@ Initialized 2026-08-03, from an operator interview (see PR/commit that introduce
   variants and dropped the `[MERGE-COMMIT]` ones.
 - **Review bots**: Copilot auto-reviews every PR; Codex/Claude review by request, expected on any
   non-trivial PR that won't get substantial human review otherwise. Filled into both §8 and the
-  batch-review skill's bot roster.
+  batch-review skill's bot roster. *(2026-09-24: Claude was never installed. It has not posted a
+  review here, and `docs/pr-review-machinery.md` now records that. §8 was corrected to match,
+  and the roster lives in that doc.)*
 - **Repo map** (`docs/repo-map.md`): kept — seeded with the one real greenfield boundary
   (owner-scoped data access, tracked as R-001) rather than padded with aspirational entries.
 - **Caveman mode**: kept. Its body was appended to this file as `## Caveman Mode` below, since
