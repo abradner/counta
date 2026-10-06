@@ -26,7 +26,7 @@ jobs:
   # Static checks are their own job so a style or advisory failure can't be
   # mistaken for a broken test run, and vice versa.
   lint:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +72,7 @@ jobs:
           mise exec -- bundle exec bundle-audit check
 
   rspec:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 15
 
     services:
