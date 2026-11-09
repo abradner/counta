@@ -53,7 +53,7 @@ jobs:
       # narrows the exposure to those still-cold cases rather than removing
       # it; timeout-minutes below bounds what a stall costs when it happens.
       - name: Cache gems
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: vendor/bundle
           key: bundle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-${{ hashFiles('Gemfile.lock') }}
@@ -100,7 +100,7 @@ jobs:
 
       # See the matching step in the lint job for why this exists.
       - name: Cache gems
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: vendor/bundle
           key: bundle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-${{ hashFiles('Gemfile.lock') }}
