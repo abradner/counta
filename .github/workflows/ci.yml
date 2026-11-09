@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jdx/mise-action@v2
 
       # Both jobs share this cache key: install path is pinned to
@@ -90,7 +90,7 @@ jobs:
           --health-retries 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Reads the Ruby pin from mise.toml so CI can't drift from dev machines.
       - uses: jdx/mise-action@v2
