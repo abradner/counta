@@ -207,7 +207,7 @@ What the publish pipeline actually does (`.github/workflows/docker.yml`, image
 `ghcr.io/abradner/counta` — the workflow writes `ghcr.io/${{ github.repository }}`, which expands
 to the full `owner/repo`, not a bare repo name):
 
-- **Push to `main`** → build and push `:sha-<full-sha>`, then alias `:latest` onto that digest —
+- **Push to `main`** → build and push `:sha-<full-sha>`, then alias `:latest` onto that `sha-<full-sha>` manifest list —
   but only if `main`'s remote tip is *still* the commit that was built. That guard exists because
   a rerun of an old completed run would otherwise drag `:latest` backwards, which `concurrency:`
   alone can't catch.
@@ -220,8 +220,8 @@ to the full `owner/repo`, not a bare repo name):
 - **Branch pushes** → nothing. Only `ci.yml` runs.
 
 Every build is multi-arch: `linux/arm64` for athena and `linux/amd64` for boreas, the x86
-disaster-recovery zone. Each architecture builds natively on its own runner (no QEMU, which is
-why the old amd64 target was dropped for build speed) and pushes by digest; a merge job assembles
+disaster-recovery zone. Each architecture builds natively on its own runner and pushes by digest
+(no QEMU: building amd64 under it is what made the old amd64 target too slow to keep); a merge job assembles
 one manifest list and applies the tags. It refuses to publish unless both digests exist, and reads
 the published manifest back to check both platforms are in it: a one-entry manifest list looks
 healthy in the registry and fails only at pull time on the missing architecture. (This paragraph

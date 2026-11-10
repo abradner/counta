@@ -130,6 +130,9 @@ jobs:
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
+          # A re-run of all jobs reuses the run, where the first attempt's
+          # artifact of this name still exists; without this the upload fails.
+          overwrite: true
 
   merge:
     name: Publish manifest (ghcr.io)
@@ -181,6 +184,23 @@ jobs:
           tags: |
             type=sha,format=long
             type=ref,event=tag
+
+      # Before anything is tagged: each digest must name a platform, and
+      # together they must cover both. The read-back after publishing checks
+      # the result too, but by then a bad list already holds the sha tag.
+      - name: Verify the digests cover both architectures
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          platforms=$(for d in *; do
+            docker buildx imagetools inspect --raw "$IMAGE@sha256:$d" \
+              | jq -r 'if .manifests then .manifests[] | select(.platform.os != "unknown") | .platform.os + "/" + .platform.architecture
+                       else empty end'
+          done | sort -u)
+          echo "platforms in the digests:"; echo "$platforms"
+          for want in linux/amd64 linux/arm64; do
+            grep -qx "$want" <<<"$platforms" || { echo "::error::no digest for $want; refusing to publish"; exit 1; }
+          done
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
