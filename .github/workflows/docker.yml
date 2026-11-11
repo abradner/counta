@@ -138,7 +138,7 @@ jobs:
     name: Publish manifest (ghcr.io)
     needs: build
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/download-artifact@v8
         with:
