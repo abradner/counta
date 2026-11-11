@@ -207,21 +207,25 @@ What the publish pipeline actually does (`.github/workflows/docker.yml`, image
 `ghcr.io/abradner/counta` — the workflow writes `ghcr.io/${{ github.repository }}`, which expands
 to the full `owner/repo`, not a bare repo name):
 
-- **Push to `main`** → build and push `:sha-<full-sha>`, then alias `:latest` onto that digest —
+- **Push to `main`** → build and push `:sha-<full-sha>`, then alias `:latest` onto that `sha-<full-sha>` manifest list —
   but only if `main`'s remote tip is *still* the commit that was built. That guard exists because
   a rerun of an old completed run would otherwise drag `:latest` backwards, which `concurrency:`
   alone can't catch.
 - **Push a `v*` tag** → build and push `:<tag>`. `flavor: latest=false` is deliberate: a tag build
   never moves `:latest`. No `v*` tag has been pushed yet.
-- **Pull request** → builds `linux/arm64` natively and pushes **nothing**. A pre-merge smoke test
-  that the image still builds.
+- **Pull request** → builds both architectures natively and pushes **nothing**. A pre-merge smoke
+  test that the image still builds.
 - **`workflow_dispatch`** → manual build on any branch (e.g. to test-deploy one). The `latest`
   step is skipped for any ref that isn't `main`.
 - **Branch pushes** → nothing. Only `ci.yml` runs.
 
-Every build is `linux/arm64` only — the cluster's architecture. The former QEMU-built amd64
-convenience target was dropped for build speed; x86 hosts can `docker build` locally, and the
-workflow comment records the native-runner path if publishing amd64 ever returns.
+Every build is multi-arch: `linux/arm64` for athena and `linux/amd64` for boreas, the x86
+disaster-recovery zone. Each architecture builds natively on its own runner and pushes by digest
+(no QEMU: building amd64 under it is what made the old amd64 target too slow to keep); a merge job assembles
+one manifest list and applies the tags. It refuses to publish unless both digests exist, and reads
+the published manifest back to check both platforms are in it: a one-entry manifest list looks
+healthy in the registry and fails only at pull time on the missing architecture. (This paragraph
+said "`linux/arm64` only" until 2026-11-10, when boreas needed an amd64 image.)
 
 Two universal cautions, whatever the pipeline:
 

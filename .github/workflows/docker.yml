@@ -1,5 +1,18 @@
 name: docker
 
+# Multi-arch since 2026-11-10: linux/arm64 for athena (Pi 5 nodes) AND
+# linux/amd64 for boreas, the x86 disaster-recovery zone. Each architecture is
+# built natively on a runner of its own architecture (no QEMU), pushed by
+# digest with no tags, and a `merge` job then assembles both digests into one
+# manifest list and applies the tags. The shape follows spritz's
+# docker-build.yml / docker-publish.yml.
+#
+# Why the merge job refuses to publish one architecture: a single-arch push
+# still produces a manifest *list*, just with one entry. It looks healthy in
+# the registry and fails only at pull time, only on the other architecture
+# (ImagePullBackOff, "no matching manifest"). That is how arm64-only images
+# went unnoticed until boreas tried to run them.
+
 on:
   # Pushes: only main and release tags publish. Not every branch push — run
   # workflow_dispatch on a branch when you actually want an image out of it
@@ -8,12 +21,13 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
-  # PRs build but never push (see `push:` on the build step). Without this a
-  # change to the Dockerfile, .dockerignore or bin/docker-entrypoint gets a
-  # green PR from ci.yml having never been built, and first breaks on the
-  # post-merge main run — which is also the run that moves `:latest`. That is
-  # the "a skipped job is not a passing job" caution in AGENTS.md §7, so the
-  # workflow closes it rather than the doc just warning about it.
+  # PRs build both architectures but never push (see `push=` on the build
+  # step, and the merge job's `if:`). Without this a change to the
+  # Dockerfile, .dockerignore or bin/docker-entrypoint gets a green PR from
+  # ci.yml having never been built, and first breaks on the post-merge main
+  # run — which is also the run that moves `:latest`. That is the "a skipped
+  # job is not a passing job" caution in AGENTS.md §7, so the workflow closes
+  # it rather than the doc just warning about it.
   pull_request:
 
 permissions:
@@ -28,17 +42,27 @@ concurrency:
   group: docker-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
-  build-push:
-    name: Build image (pushes to ghcr.io on main/tags only)
-    # The cluster runs on arm64 (Pi 5 nodes) — build that natively on GitHub's
-    # arm runners. arm64 only: the amd64 target used to be built here under
-    # QEMU on main/tag pushes and dominated wall clock (in mcg, the same
-    # shape, it was ~14 of ~16 minutes — see mcg#9). x86 hosts can
-    # `docker build` locally; if publishing amd64 ever matters again, add a
-    # parallel native ubuntu-24.04 job and merge digests with imagetools
-    # rather than reintroducing QEMU.
-    runs-on: ubuntu-24.04-arm
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # Both or nothing: the merge job needs every leg, so letting the other
+      # leg finish after one fails buys nothing but runner minutes.
+      fail-fast: true
+      # Adding or removing a platform here means changing EXPECTED_DIGESTS in
+      # the merge job too.
+      matrix:
+        include:
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            slug: arm64
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            slug: amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -53,30 +77,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Labels only (revision, source, created): tags belong to the manifest
+      # list the merge job assembles, not to either single-arch image.
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
-          # latest=false is load-bearing, not just for the raw-tag rule below:
-          # metadata-action's default flavor still auto-adds `latest` off
-          # type=ref,event=tag for a v* push, which would repoint `latest` on
-          # an old release tag (or a rerun of one) before the guarded step
-          # ever runs. Keep this even though there's no explicit raw `latest`
-          # rule here — `latest` is only ever set by the guarded step below.
-          flavor: |
-            latest=false
-          tags: |
-            type=sha,format=long
-            type=ref,event=tag
+          images: ${{ env.IMAGE }}
 
       - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
           # Registry cache, not type=gha: GitHub's Actions cache evicts
           # entries unused for 7 days, so infrequent builds always started
           # cold. A buildcache tag on ghcr.io persists until we delete it,
@@ -86,34 +100,153 @@ jobs:
           #
           # Concurrent non-PR runs (e.g. a main push racing a tag push —
           # concurrency: groups by ref, so it doesn't serialize these) can
-          # both export to this one tag; last write wins. Accepted: the
-          # cache is best-effort, the loser costs one partially-cold build,
-          # never a wrong image. Per-ref tags would fix it at the price of
-          # main and tag builds never sharing a cache — worse in practice,
-          # since tags are cut from main.
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref=ghcr.io/{0}:buildcache,mode=max', github.repository) || '' }}
+          # both export to one tag; last write wins. Accepted: the cache is
+          # best-effort, the loser costs one partially-cold build, never a
+          # wrong image.
+          #
+          # One cache tag per architecture: with mode=max each export replaces
+          # the tag, so a shared tag would have the two legs evict each other
+          # on every run. (The old single `buildcache` tag is unused since
+          # 2026-11-10 and can be deleted.)
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.slug }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:buildcache-{1},mode=max', env.IMAGE, matrix.slug) || '' }}
+
+      # Under RUNNER_TEMP, which the runner empties per job, never /tmp.
+      # Skipped on a PR: nothing was pushed, so there is nothing to merge.
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [ -n "$DIGEST" ] || { echo "::error::no digest from the build"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: digest-${{ matrix.slug }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+          # A re-run of all jobs reuses the run, where the first attempt's
+          # artifact of this name still exists; without this the upload fails.
+          overwrite: true
+
+  merge:
+    name: Publish manifest (ghcr.io)
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      # `needs: build` protects the normal path, but not a RE-RUN of this job
+      # alone: the 1-day artifact retention can leave one leg's digest expired,
+      # and `imagetools create` would then publish a single-arch manifest under
+      # the full tag set.
+      - name: Verify every architecture produced a digest
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          EXPECTED_DIGESTS: 2
+        run: |
+          shopt -s nullglob
+          digests=(*)
+          if [ "${#digests[@]}" -ne "$EXPECTED_DIGESTS" ]; then
+            echo "::error::expected $EXPECTED_DIGESTS digests, found ${#digests[@]}: ${digests[*]}"
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # latest=false is load-bearing: metadata-action's default flavor
+          # auto-adds `latest` off type=ref,event=tag for a v* push, which
+          # would repoint `latest` on an old release tag (or a rerun of one)
+          # before the guarded step ever runs. `latest` is only ever set by
+          # that step.
+          flavor: |
+            latest=false
+          tags: |
+            type=sha,format=long
+            type=ref,event=tag
+
+      # Before anything is tagged: each digest must name a platform, and
+      # together they must cover both. The read-back after publishing checks
+      # the result too, but by then a bad list already holds the sha tag.
+      - name: Verify the digests cover both architectures
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          platforms=$(for d in *; do
+            docker buildx imagetools inspect --raw "$IMAGE@sha256:$d" \
+              | jq -r 'if .manifests then .manifests[] | select(.platform.os != "unknown") | .platform.os + "/" + .platform.architecture
+                       else empty end'
+          done | sort -u)
+          echo "platforms in the digests:"; echo "$platforms"
+          for want in linux/amd64 linux/arm64; do
+            grep -qx "$want" <<<"$platforms" || { echo "::error::no digest for $want; refusing to publish"; exit 1; }
+          done
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          tags=()
+          while IFS= read -r t; do tags+=(-t "$t"); done < <(jq -r '.tags[]' <<<"$DOCKER_METADATA_OUTPUT_JSON")
+          [ "${#tags[@]}" -gt 0 ] || { echo "::error::no tags to publish"; exit 1; }
+          sources=()
+          for d in *; do sources+=("$IMAGE@sha256:$d"); done
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+
+      # Check the artifact, not the step that made it: read the published
+      # manifest list back and require both platforms in it.
+      - name: Verify the published manifest is multi-arch
+        env:
+          REF: ${{ env.IMAGE }}:sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          platforms=$(docker buildx imagetools inspect --raw "$REF" \
+            | jq -r '.manifests[] | select(.platform.os != "unknown") | .platform.os + "/" + .platform.architecture' | sort)
+          echo "$REF platforms:"; echo "$platforms"
+          for want in linux/amd64 linux/arm64; do
+            grep -qx "$want" <<<"$platforms" || { echo "::error::$REF has no $want entry"; exit 1; }
+          done
 
       - name: Publish latest (only if still the tip of main)
         # Guards the case concurrency can't: a rerun of an old completed
         # workflow run (push OR a manual workflow_dispatch against main)
         # still targets refs/heads/main and would otherwise republish
         # `latest` pointing at a stale commit. Only alias `latest` onto this
-        # build's digest if HEAD is still what main actually points at right
-        # now. Never fires for tag pushes or branch dispatches — `latest`
-        # only ever tracks main.
+        # build's manifest list if main still points at the built commit.
+        # Never fires for tag pushes or branch dispatches — `latest` only ever
+        # tracks main.
         if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          remote_sha=$(git ls-remote origin refs/heads/main | cut -f1)
+          remote_sha=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
           if [ -z "$remote_sha" ]; then
-            echo "::error::git ls-remote returned no SHA for refs/heads/main — refusing to guess, skipping latest."
+            echo "::error::could not resolve refs/heads/main — refusing to guess, skipping latest."
             exit 1
           fi
           if [ "$remote_sha" = "${{ github.sha }}" ]; then
-            docker buildx imagetools create \
-              -t ghcr.io/${{ github.repository }}:latest \
-              ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+            docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:sha-${{ github.sha }}"
           else
             echo "main has moved to $remote_sha since this run started (${{ github.sha }}) — skipping latest."
           fi
