@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
 
       # Both jobs share this cache key: install path is pinned to
       # vendor/bundle (not mise's default gem path) so lint and rspec
@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # Reads the Ruby pin from mise.toml so CI can't drift from dev machines.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
 
       - name: Install Chromium for system specs
         run: sudo apt-get update && sudo apt-get install -y chromium-browser
