@@ -80,7 +80,7 @@ jobs:
       # Labels only (revision, source, created): tags belong to the manifest
       # list the merge job assembles, not to either single-arch image.
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
 
@@ -171,7 +171,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
           # latest=false is load-bearing: metadata-action's default flavor
